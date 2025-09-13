@@ -3,7 +3,7 @@
 **A comprehensive diagnostic tool for MCP (Model Context Protocol) servers**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 MCP Doctor is your go-to diagnostic tool for analyzing MCP servers and ensuring they follow best practices for AI agent integration. Just like a medical doctor diagnoses health issues, MCP Doctor diagnoses your MCP servers to ensure they're agent-friendly, performant, and compliant with [Anthropic's best practices](https://www.anthropic.com/engineering/writing-tools-for-agents).
@@ -20,6 +20,32 @@ MCP Doctor performs comprehensive health checks on your MCP servers, whether the
 - 📊 **Rich Reports** - Beautiful terminal output with detailed diagnostics
 - 🚀 **Easy Integration** - Simple CLI and Python API
 - ⚡ **Fast Execution** - Async operations for quick analysis
+
+## 🧠 Philosophy
+
+MCP Doctor is built around two core principles that drive every design decision:
+
+### ⚡ **Speed First**
+This tool is designed for **frequent, everyday usage** by developers and AI engineers. Speed is paramount:
+
+- **No AI dependencies** - We deliberately avoid LLM-based evaluation to ensure consistent, fast analysis
+- **Rule-based analysis** - Lightning-fast pattern matching and heuristic evaluation
+- **Async architecture** - Concurrent operations for maximum performance
+- **Minimal overhead** - Direct protocol communication without unnecessary abstractions
+
+*Why this matters: When you're iterating on MCP servers, waiting 30+ seconds for AI-powered analysis breaks your flow. MCP Doctor gives you actionable insights in seconds, not minutes.*
+
+### 🔒 **Security Paramount**
+Security isn't an afterthought—it's baked into every feature:
+
+- **Smart credential filtering** - Automatically detects and hides sensitive environment variables from logs
+- **Configurable privacy levels** - From secure filtering to complete logging disablement
+- **No data transmission** - All analysis happens locally; your secrets never leave your machine
+- **Secure defaults** - Safe configurations out of the box
+
+*Why this matters: MCP servers often handle sensitive API keys, database credentials, and private data. MCP Doctor ensures your secrets stay secret while providing the insights you need.*
+
+These principles ensure MCP Doctor remains a tool you'll reach for daily—fast enough for rapid iteration, secure enough for production environments.
 
 ## 🚀 Quick Start
 
@@ -214,15 +240,15 @@ mcp-doctor/
 ├── src/mcp_analyzer/       # Main package
 │   ├── cli.py              # CLI interface
 │   ├── mcp_client.py       # MCP server communication
+│   ├── mcp_stdio_client.py # STDIO transport client
 │   ├── npx_launcher.py     # NPX server management
 │   ├── reports.py          # Output formatting
-│   ├── utils.py            # Utility functions
 │   └── checkers/           # Diagnostic modules
 │       └── descriptions.py # Description analysis
 └── tests/                  # Test suite
 ```
 
-### Running Tests
+### Development Setup
 ```bash
 # Install development dependencies
 pip install -e ".[dev]"
@@ -233,6 +259,25 @@ pytest
 # Run with coverage
 pytest --cov=mcp_analyzer
 ```
+
+### Code Quality & Linting
+This project uses automated code formatting and linting:
+
+```bash
+# Auto-format code (black + isort)
+./scripts/format.sh
+
+# Check code quality (black + isort + mypy)
+./scripts/lint.sh
+
+# Or run individual tools
+black src/ tests/
+isort src/ tests/
+mypy src/
+```
+
+**Pre-commit Setup:**
+The project includes a GitHub Actions workflow that runs on every pull request to ensure code quality. Make sure to run `./scripts/format.sh` before committing changes.
 
 ## 🤝 Contributing
 
