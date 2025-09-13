@@ -33,7 +33,7 @@ class DescriptionIssue:
     severity: Severity
     message: str
     suggestion: str
-    field: Optional[str] = None  # Which field has the issue (description, parameter, etc.)
+    field: Optional[str] = None
 
 
 class DescriptionChecker:
@@ -48,19 +48,16 @@ class DescriptionChecker:
     """
     
     def __init__(self):
-        # Words that might confuse AI agents
         self.ambiguous_terms = [
             'id', 'data', 'info', 'item', 'object', 'value', 'param',
             'arg', 'input', 'output', 'result', 'response'
         ]
         
-        # Technical jargon to avoid in descriptions
         self.technical_jargon = [
             'uuid', 'json', 'api', 'endpoint', 'crud', 'dto', 'orm',
             'serialize', 'deserialize', 'payload', 'schema'
         ]
         
-        # Words that indicate good contextual descriptions
         self.context_indicators = [
             'when', 'if', 'after', 'before', 'during', 'for example',
             'use this', 'helps to', 'allows you', 'enables'
@@ -92,7 +89,6 @@ class DescriptionChecker:
                 stats["tools_with_issues"] += 1
                 issues.extend(tool_issues)
                 
-                # Count by severity
                 for issue in tool_issues:
                     if issue.severity == Severity.ERROR:
                         stats["errors"] += 1
@@ -114,11 +110,9 @@ class DescriptionChecker:
         issues = []
         tool_name = getattr(tool, 'name', 'unknown_tool')
         
-        # Check main description
         description = getattr(tool, 'description', None)
         issues.extend(self._check_main_description(tool_name, description))
         
-        # Check parameters if available
         input_schema = getattr(tool, 'input_schema', None) or getattr(tool, 'parameters', None)
         if input_schema:
             issues.extend(self._check_parameters(tool_name, input_schema))
@@ -129,7 +123,6 @@ class DescriptionChecker:
         """Check the main tool description."""
         issues = []
         
-        # Missing description
         if not description or not description.strip():
             issues.append(DescriptionIssue(
                 tool_name=tool_name,
@@ -141,7 +134,6 @@ class DescriptionChecker:
             ))
             return issues
         
-        # Too short
         if len(description.strip()) < 20:
             issues.append(DescriptionIssue(
                 tool_name=tool_name,
@@ -152,7 +144,6 @@ class DescriptionChecker:
                 field="description"
             ))
         
-        # Unclear purpose
         if not self._has_clear_purpose(description):
             issues.append(DescriptionIssue(
                 tool_name=tool_name,
@@ -163,7 +154,6 @@ class DescriptionChecker:
                 field="description"
             ))
         
-        # Technical jargon
         jargon_found = [word for word in self.technical_jargon 
                        if word.lower() in description.lower()]
         if jargon_found:
@@ -176,7 +166,6 @@ class DescriptionChecker:
                 field="description"
             ))
         
-        # Missing context
         if not any(indicator in description.lower() for indicator in self.context_indicators):
             issues.append(DescriptionIssue(
                 tool_name=tool_name,
@@ -196,10 +185,8 @@ class DescriptionChecker:
         if not isinstance(schema, dict):
             return issues
         
-        # Check if schema has properties
         properties = schema.get('properties', {})
         if not properties:
-            # Try other common schema formats
             if 'parameters' in schema:
                 properties = schema['parameters']
             elif 'fields' in schema:
@@ -209,7 +196,6 @@ class DescriptionChecker:
             if not isinstance(param_info, dict):
                 continue
             
-            # Check for ambiguous parameter names
             if param_name.lower() in self.ambiguous_terms:
                 issues.append(DescriptionIssue(
                     tool_name=tool_name,
@@ -220,18 +206,16 @@ class DescriptionChecker:
                     field=f"parameter.{param_name}"
                 ))
             
-            # Check for poor parameter naming patterns
             if self._is_poor_parameter_name(param_name):
                 issues.append(DescriptionIssue(
                     tool_name=tool_name,
                     issue_type=IssueType.POOR_PARAMETER_NAMES,
                     severity=Severity.INFO,
                     message=f"Parameter '{param_name}' could be more descriptive",
-                    suggestion=f"Consider a more semantic name that clearly indicates the parameter's purpose",
+                    suggestion="Consider a more semantic name that clearly indicates the parameter's purpose",
                     field=f"parameter.{param_name}"
                 ))
             
-            # Check parameter description
             param_desc = param_info.get('description', '')
             if not param_desc:
                 issues.append(DescriptionIssue(
@@ -247,7 +231,7 @@ class DescriptionChecker:
     
     def _has_clear_purpose(self, description: str) -> bool:
         """Check if description clearly states the tool's purpose."""
-        # Look for action verbs and clear statements
+
         action_verbs = [
             'create', 'update', 'delete', 'get', 'fetch', 'retrieve',
             'search', 'find', 'list', 'manage', 'handle', 'process',
@@ -256,10 +240,8 @@ class DescriptionChecker:
         
         description_lower = description.lower()
         
-        # Should start with or contain action verbs
         has_action = any(verb in description_lower for verb in action_verbs)
         
-        # Should not be overly vague
         vague_terms = ['handle', 'manage', 'process', 'deal with']
         is_vague = any(term in description_lower for term in vague_terms) and len(description) < 50
         
@@ -267,11 +249,9 @@ class DescriptionChecker:
     
     def _is_poor_parameter_name(self, param_name: str) -> bool:
         """Check if parameter name could be improved."""
-        # Single letter parameters
         if len(param_name) == 1:
             return True
         
-        # Generic patterns
         poor_patterns = [
             r'^param\d*$',
             r'^arg\d*$', 
@@ -286,12 +266,10 @@ class DescriptionChecker:
         """Generate top-level recommendations based on found issues."""
         recommendations = []
         
-        # Count issue types
         issue_counts = {}
         for issue in issues:
             issue_counts[issue.issue_type] = issue_counts.get(issue.issue_type, 0) + 1
         
-        # Generate recommendations based on most common issues
         if issue_counts.get(IssueType.MISSING_DESCRIPTION, 0) > 0:
             count = issue_counts[IssueType.MISSING_DESCRIPTION]
             recommendations.append(
@@ -316,7 +294,6 @@ class DescriptionChecker:
                 f"Add usage context to {count} tools to help agents understand when to use them"
             )
         
-        # If no major issues, provide general advice
         if not recommendations:
             recommendations.append("All tools have good descriptions! Consider adding usage examples for even better agent experience.")
         
