@@ -1,157 +1,110 @@
-# MCP Analyzer
+# MCP Doctor 🩺
 
-🔍 **CLI tool for analyzing MCP servers for agent-friendliness**
+**A comprehensive diagnostic tool for MCP (Model Context Protocol) servers**
 
-Based on Anthropic's best practices from ["Writing effective tools for agents — with agents"](https://www.anthropic.com/engineering/writing-tools-for-agents), this tool helps you evaluate and improve your MCP (Model Context Protocol) servers to make them more effective for AI agents.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-## Features
+MCP Doctor is your go-to diagnostic tool for analyzing MCP servers and ensuring they follow best practices for AI agent integration. Just like a medical doctor diagnoses health issues, MCP Doctor diagnoses your MCP servers to ensure they're agent-friendly, performant, and compliant with [Anthropic's best practices](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
-- 📝 **AI-Readable Description Analysis** - Check tool descriptions for clarity, context, and agent-friendliness
-- 🎯 **Actionable Recommendations** - Get specific suggestions for improving your tools
-- 📊 **Rich Reports** - Beautiful terminal output with detailed statistics
-- 🔄 **Multiple Output Formats** - Table, JSON, and YAML output options
-- ⚡ **Fast Analysis** - Async connections and efficient processing
+## 🎯 What is MCP Doctor?
 
-## Installation
+MCP Doctor performs comprehensive health checks on your MCP servers, whether they're running as traditional HTTP services or launched via NPX commands. It analyzes tool descriptions, parameter schemas, and server behavior to provide actionable recommendations for improving AI agent compatibility.
 
-### From PyPI (when published)
-```bash
-pip install mcp-analyzer
-```
+## ✨ Key Features
 
-### Development Installation
-```bash
-# Clone and install in development mode
-git clone <repository-url>
-cd mcp-analyzer
-pip install -e .
-```
+- 🔍 **Deep Analysis** - Comprehensive evaluation of MCP server health
+- 🌐 **Universal Support** - Works with HTTP servers and NPX-launched packages
+- 🔧 **Environment Handling** - Secure API key and environment variable management
+- 📊 **Rich Reports** - Beautiful terminal output with detailed diagnostics
+- 🚀 **Easy Integration** - Simple CLI and Python API
+- ⚡ **Fast Execution** - Async operations for quick analysis
 
-### Dependencies
-- Python 3.8+
-- typer (CLI framework)
-- httpx (HTTP client)
-- rich (Terminal UI)
-- pydantic (Data validation)
+## 🚀 Quick Start
 
-## Quick Start
-
-### Basic Analysis
-```bash
-# Analyze your local HTTP MCP server
-mcp-analyzer analyze --target http://localhost:8000/mcp
-
-# Analyze NPX-launched MCP server
-mcp-analyzer analyze --target "npx firecrawl-mcp"
-
-# Analyze NPX server with environment variables
-mcp-analyzer analyze --target "export FIRECRAWL_API_KEY=your_key && npx firecrawl-mcp"
-
-# Analyze with verbose output
-mcp-analyzer analyze --target http://localhost:8000/mcp --verbose
-
-```
-
-### Output Formats
-```bash
-# Table output (default) - beautiful terminal display
-mcp-analyzer analyze --target http://localhost:8000/mcp --output-format table
-
-# JSON output - for programmatic use
-mcp-analyzer analyze --target "npx firecrawl-mcp" --output-format json > analysis.json
-
-# YAML output - human-readable structured data
-mcp-analyzer analyze --target http://localhost:8000/mcp --output-format yaml
-```
-
-## Example Output
-
-```
-🔍 Analyzing MCP Server
-Server: http://localhost:8000/mcp
-Check Type: descriptions
-
-✅ Connected! Found 45 tools
-
-📝 AI-Readable Description Analysis
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┓
-┃ Metric                       ┃    Count ┃ Percentage ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ ✅ Passed                    │       23 │      51.1% │
-│ ⚠️  Warnings                 │       15 │      68.2% │
-│ ❌ Errors                    │        7 │      31.8% │
-│ ℹ️  Info                     │        0 │       0.0% │
-└──────────────────────────────┴──────────┴────────────┘
-
-🎯 Top Recommendations:
-   1. Add descriptions to 7 tools that are missing them entirely
-   2. Rename 15 ambiguous parameters to be more descriptive  
-   3. Expand descriptions for 8 tools that have very brief descriptions
-   4. Add usage context to 12 tools to help agents understand when to use them
-```
-
-## API Reference
-
-### CLI Commands
-
-#### `analyze`
-Main command to analyze an MCP server.
+### Installation
 
 ```bash
-mcp-analyzer analyze [OPTIONS]
+pip install mcp-doctor
 ```
 
-**Options:**
-- `--target TEXT` (required): MCP server URL or NPX command to analyze
-- `--check {descriptions,schemas,performance,all}`: Type of analysis to run (default: descriptions)
-- `--output-format {table,json,yaml}`: Output format (default: table)
-- `--verbose / --no-verbose`: Show detailed suggestions (default: False)
-- `--timeout INTEGER`: Request timeout in seconds (default: 30)
-- `--env-vars TEXT`: Environment variables for NPX command (JSON format)
-- `--working-dir TEXT`: Working directory for NPX command
-
-
-#### `version`
-Show version information.
+### Basic Usage
 
 ```bash
-mcp-analyzer version
+# Diagnose an HTTP MCP server
+mcp-doctor analyze --target http://localhost:8000/mcp
+
+# Diagnose an NPX-launched MCP server
+mcp-doctor analyze --target "npx firecrawl-mcp"
+
+# Diagnose with environment variables
+mcp-doctor analyze --target "export FIRECRAWL_API_KEY=your_key && npx firecrawl-mcp"
+
+# Get detailed diagnostic output
+mcp-doctor analyze --target http://localhost:8000/mcp --verbose
 ```
 
-## Integration Examples
+## 🩺 Diagnostic Capabilities
 
-### CI/CD Pipeline
-```yaml
-# GitHub Actions example
-- name: Analyze MCP Server
-  run: |
-    # Start your MCP server
-    python main.py &
-    sleep 5
-    
-    # Run analysis
-    mcp-analyzer analyze --server-url http://localhost:8000/mcp --output-format json > mcp-analysis.json
-    
-    # Fail if critical issues found
-    python -c "
-    import json
-    with open('mcp-analysis.json') as f:
-        results = json.load(f)
-    errors = results['checks']['descriptions']['statistics']['errors']
-    if errors > 0:
-        exit(1)
-    "
+### 📝 Tool Description Analysis
+- **Clarity Assessment** - Evaluates description readability and completeness
+- **Context Validation** - Ensures tools explain when and how to use them
+- **Parameter Naming** - Checks for descriptive vs generic parameter names
+- **Purpose Clarity** - Validates that each tool's purpose is clearly stated
+- **Jargon Detection** - Identifies technical terms that should be simplified
+
+### 🔮 Future Diagnostics (Roadmap)
+- **Schema Validation** - Parameter schema compatibility checks
+- **Performance Analysis** - Response time and resource usage evaluation
+- **Security Audit** - Authentication and authorization best practices
+- **Integration Testing** - Agent interaction simulation
+
+## 🌐 Server Support
+
+### HTTP Servers
+```bash
+mcp-doctor analyze --target http://localhost:8000/mcp
+mcp-doctor analyze --target https://api.example.com/mcp
 ```
 
-### Programmatic Use
+### NPX Packages
+```bash
+# Basic NPX analysis
+mcp-doctor analyze --target "npx firecrawl-mcp"
 
-#### HTTP Server Analysis
+# With environment variables (inline)
+mcp-doctor analyze --target "export API_KEY=abc123 && npx firecrawl-mcp"
+
+# With environment variables (JSON format)
+mcp-doctor analyze --target "npx firecrawl-mcp" --env-vars '{"API_KEY": "abc123"}'
+
+# With custom working directory
+mcp-doctor analyze --target "npx firecrawl-mcp" --working-dir "/path/to/project"
+```
+
+## 📊 Output Formats
+
+```bash
+# Beautiful table output (default)
+mcp-doctor analyze --target "npx firecrawl-mcp" --output-format table
+
+# JSON for programmatic use
+mcp-doctor analyze --target "npx firecrawl-mcp" --output-format json > report.json
+
+# YAML for human-readable structured data
+mcp-doctor analyze --target "npx firecrawl-mcp" --output-format yaml
+```
+
+## 🔧 Python API
+
+### HTTP Server Diagnosis
 ```python
 import asyncio
 from mcp_analyzer.mcp_client import MCPClient
 from mcp_analyzer.checkers.descriptions import DescriptionChecker
 
-async def analyze_http_server():
+async def diagnose_http_server():
     client = MCPClient("http://localhost:8000/mcp")
     
     try:
@@ -164,26 +117,108 @@ async def analyze_http_server():
     finally:
         await client.close()
 
-# Run analysis
-results = asyncio.run(analyze_http_server())
+# Run diagnosis
+results = asyncio.run(diagnose_http_server())
 print(f"Found {len(results['issues'])} issues")
 ```
 
+### NPX Server Diagnosis
+```python
+import asyncio
+from mcp_analyzer.mcp_client import MCPClient
+from mcp_analyzer.checkers.descriptions import DescriptionChecker
 
-## Development
+async def diagnose_npx_server():
+    # Method 1: Environment variables in command
+    client = MCPClient("export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp")
+    
+    # Method 2: Environment variables via kwargs
+    # client = MCPClient("npx firecrawl-mcp", env_vars={"FIRECRAWL_API_KEY": "abc123"})
+    
+    try:
+        # Server will be launched automatically
+        server_info = await client.get_server_info()
+        tools = await client.get_tools()
+        
+        checker = DescriptionChecker()
+        results = checker.analyze_tool_descriptions(tools)
+        
+        print(f"Diagnosed NPX server at: {client.get_server_url()}")
+        return results
+        
+    finally:
+        # This will automatically stop the NPX server
+        await client.close()
+
+# Run diagnosis
+results = asyncio.run(diagnose_npx_server())
+print(f"Found {len(results['issues'])} issues")
+```
+
+## 🏥 Example Diagnostic Report
+
+```
+🩺 MCP Doctor - Server Diagnosis
+NPX Command: export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp
+
+✅ NPX server launched at http://localhost:3001
+✅ Connected! Found 12 tools
+
+📝 Tool Description Analysis
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Diagnostic Result            ┃    Count ┃ Percentage ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ ✅ Healthy Tools             │        8 │      66.7% │
+│ ⚠️  Warnings                 │        3 │      25.0% │
+│ 🚨 Critical Issues           │        1 │       8.3% │
+│ ℹ️  Recommendations          │        5 │      41.7% │
+└──────────────────────────────┴──────────┴────────────┘
+
+🎯 Treatment Recommendations:
+   1. Add descriptions to 1 tool missing documentation
+   2. Improve parameter naming for 3 tools with generic names
+   3. Add usage context to 2 tools for better agent understanding
+   4. Simplify technical jargon in 2 tool descriptions
+```
+
+## 📋 CLI Reference
+
+### `analyze` Command
+Main diagnostic command for MCP servers.
+
+```bash
+mcp-doctor analyze [OPTIONS]
+```
+
+**Options:**
+- `--target TEXT` (required): MCP server URL or NPX command to diagnose
+- `--check {descriptions,schemas,performance,all}`: Type of diagnosis to run (default: descriptions)
+- `--output-format {table,json,yaml}`: Output format (default: table)
+- `--verbose / --no-verbose`: Show detailed diagnostic output (default: False)
+- `--timeout INTEGER`: Request timeout in seconds (default: 30)
+- `--env-vars TEXT`: Environment variables for NPX command (JSON format)
+- `--working-dir TEXT`: Working directory for NPX command
+
+### `version` Command
+Show version and diagnostic capabilities.
+
+```bash
+mcp-doctor version
+```
+
+## 🏗️ Development
 
 ### Project Structure
 ```
-mcp-analyzer/
-├── pyproject.toml          # Project configuration
+mcp-doctor/
 ├── src/mcp_analyzer/       # Main package
 │   ├── cli.py              # CLI interface
 │   ├── mcp_client.py       # MCP server communication
+│   ├── npx_launcher.py     # NPX server management
 │   ├── reports.py          # Output formatting
 │   ├── utils.py            # Utility functions
-│   └── checkers/           # Analysis modules
-│       ├── descriptions.py # Description analysis
-│       └── ...             # Future analyzers
+│   └── checkers/           # Diagnostic modules
+│       └── descriptions.py # Description analysis
 └── tests/                  # Test suite
 ```
 
@@ -199,46 +234,33 @@ pytest
 pytest --cov=mcp_analyzer
 ```
 
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
+## 🤝 Contributing
 
-## Roadmap
+We welcome contributions to MCP Doctor! Whether you're:
+- 🐛 Reporting bugs
+- 💡 Suggesting new diagnostic features  
+- 🔧 Improving existing analysis
+- 📚 Enhancing documentation
 
-### Version 0.2.0
-- [ ] Schema validation analysis
-- [ ] Performance benchmarking
-- [ ] Tool interaction patterns
+Please see our contributing guidelines and feel free to open issues or pull requests.
 
-### Version 0.3.0
-- [ ] Agent simulation testing
-- [ ] Automated improvement suggestions
-- [ ] Integration with popular MCP frameworks
+## 📄 License
 
-### Version 1.0.0
-- [ ] Complete evaluation framework
-- [ ] Agent-driven optimization
-- [ ] Production monitoring capabilities
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## License
-
-MIT License - see LICENSE file for details.
-
-## Related Projects
+## 🔗 Related Projects
 
 - [Model Context Protocol](https://github.com/modelcontextprotocol/servers) - Official MCP servers
 - [Anthropic's MCP Guide](https://www.anthropic.com/engineering/writing-tools-for-agents) - Best practices reference
 
-## Support
+## 🏥 Support
 
-- 🐛 [Report Issues](https://github.com/destilabs/mcp-analyzer/issues)
-- 💬 [Discussions](https://github.com/destilabs/mcp-analyzer/discussions)
+- 🐛 [Report Issues](https://github.com/destilabs/mcp-doctor/issues)
+- 💬 [Discussions](https://github.com/destilabs/mcp-doctor/discussions)  
 - 🌐 [Destilabs](https://destilabs.com) - AI engineering and consulting
 
 ---
 
-**Built with ❤️ for the AI agent development community**
+**Built with ❤️ by [Destilabs](https://destilabs.com) for the AI agent development community**
+
+*Keep your MCP servers healthy! 🩺*

@@ -1,5 +1,5 @@
-"""MCP Analyzer - Tool for analyzing MCP servers for agent-friendliness."""
+"""MCP Doctor - Diagnostic tool for MCP servers."""
 
 __version__ = "0.1.0"
 __author__ = "Destilabs"
-__description__ = "CLI tool for analyzing MCP servers based on Anthropic's best practices"
+__description__ = "🩺 A diagnostic tool for MCP servers - analyze agent-friendliness, debug issues, and ensure best practices compliance"

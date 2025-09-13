@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mcp-analyzer"
+name = "mcp-doctor"
 version = "0.1.0"
-description = "CLI tool for analyzing MCP servers for agent-friendliness based on Anthropic's best practices"
+description = "🩺 A diagnostic tool for MCP servers - analyze agent-friendliness, debug issues, and ensure best practices compliance"
 readme = "README.md"
 authors = [
     {name = "Destilabs", email = "mykhailo.kushnir@destilabs.com"},
@@ -39,12 +39,12 @@ dev = [
 ]
 
 [project.scripts]
-mcp-analyzer = "mcp_analyzer.cli:app"
+mcp-doctor = "mcp_analyzer.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/destilabs/mcp-analyzer"
-Repository = "https://github.com/destilabs/mcp-analyzer"
-Issues = "https://github.com/destilabs/mcp-analyzer/issues"
+Homepage = "https://github.com/destilabs/mcp-doctor"
+Repository = "https://github.com/destilabs/mcp-doctor"
+Issues = "https://github.com/destilabs/mcp-doctor/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_analyzer"]

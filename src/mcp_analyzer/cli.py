@@ -14,8 +14,8 @@ from .npx_launcher import is_npx_command
 
 console = Console()
 app = typer.Typer(
-    name="mcp-analyzer",
-    help="🔍 Analyze MCP servers for agent-friendliness based on Anthropic's best practices"
+    name="mcp-doctor",
+    help="🩺 Diagnostic tool for MCP servers - analyze agent-friendliness, debug issues, and ensure best practices compliance"
 )
 
 
@@ -68,27 +68,27 @@ def analyze(
     ),
 ) -> None:
     """
-    Analyze an MCP server for agent-friendliness.
+    Diagnose an MCP server for agent-friendliness and best practices compliance.
     
-    This tool checks MCP servers against Anthropic's recommendations for
-    writing effective tools for AI agents.
+    MCP Doctor performs comprehensive health checks on MCP servers to ensure
+    they follow Anthropic's recommendations for AI agent integration.
     
     Examples:
-      # Analyze HTTP server
-      mcp-analyzer analyze --target http://localhost:8000/mcp
+      # Diagnose HTTP server
+      mcp-doctor analyze --target http://localhost:8000/mcp
       
-      # Analyze NPX server
-      mcp-analyzer analyze --target "npx firecrawl-mcp"
+      # Diagnose NPX server
+      mcp-doctor analyze --target "npx firecrawl-mcp"
       
-      # Analyze NPX server with environment variables
-      mcp-analyzer analyze --target "export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp"
+      # Diagnose NPX server with environment variables
+      mcp-doctor analyze --target "export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp"
       
-      # Analyze NPX server with JSON env vars
-      mcp-analyzer analyze --target "npx firecrawl-mcp" --env-vars '{"FIRECRAWL_API_KEY": "abc123"}'
+      # Diagnose NPX server with JSON env vars
+      mcp-doctor analyze --target "npx firecrawl-mcp" --env-vars '{"FIRECRAWL_API_KEY": "abc123"}'
     """
     is_npx = is_npx_command(target)
     
-    console.print("\n🔍 [bold blue]Analyzing MCP Server[/bold blue]")
+    console.print("\n🩺 [bold blue]MCP Doctor - Server Diagnosis[/bold blue]")
     if is_npx:
         console.print(f"NPX Command: [cyan]{target}[/cyan]")
     else:
@@ -189,10 +189,15 @@ async def _run_analysis(
 
 @app.command()
 def version() -> None:
-    """Show version information."""
+    """Show version and diagnostic capabilities."""
     from . import __version__, __description__
-    console.print(f"[bold]MCP Analyzer[/bold] v{__version__}")
+    console.print(f"[bold]🩺 MCP Doctor[/bold] v{__version__}")
     console.print(__description__)
+    console.print("\n[bold green]Available Diagnostics:[/bold green]")
+    console.print("• 📝 Tool Description Analysis")
+    console.print("• 🔮 Schema Validation (coming soon)")
+    console.print("• ⚡ Performance Analysis (coming soon)")
+    console.print("• 🔒 Security Audit (coming soon)")
 
 
 
