@@ -221,7 +221,7 @@ class MCPSSEClient:
     async def _wait_for_sse_response(self, request_id: str) -> MCPMessage:
         """Wait for SSE response with specific request ID."""
         # Create a future for this request
-        future = asyncio.Future()
+        future: asyncio.Future[MCPMessage] = asyncio.Future()
         self._pending_requests[request_id] = future
 
         try:

@@ -71,6 +71,18 @@ mcp-doctor analyze --target "export FIRECRAWL_API_KEY=your_key && npx firecrawl-
 mcp-doctor analyze --target http://localhost:8000/mcp --verbose
 ```
 
+## 🎬 Demonstrations
+
+### NPX Server Analysis
+See MCP Doctor in action analyzing an NPX-launched MCP server:
+
+[📹 Watch NPX Analysis Demo](./docs/video/MCP%20doctor%20_%20npx.mp4)
+
+### HTTP Server Analysis  
+Watch MCP Doctor diagnose an HTTP MCP server:
+
+[📹 Watch HTTP Analysis Demo](./docs/video/MCP-doctor%20_%20http.mp4)
+
 ## 🩺 Diagnostic Capabilities
 
 ### 📝 Tool Description Analysis

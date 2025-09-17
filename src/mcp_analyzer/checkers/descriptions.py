@@ -340,7 +340,7 @@ class DescriptionChecker:
         """Generate top-level recommendations based on found issues."""
         recommendations = []
 
-        issue_counts = {}
+        issue_counts: dict[IssueType, int] = {}
         for issue in issues:
             issue_counts[issue.issue_type] = issue_counts.get(issue.issue_type, 0) + 1
 
