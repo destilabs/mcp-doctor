@@ -59,10 +59,9 @@ def _get_safe_env_summary(env: dict) -> str:
         else:
             safe_vars.append(key)
 
-    # Create summary
     summary_parts = []
     if safe_vars:
-        # Show only first few safe variables to avoid log spam
+
         if len(safe_vars) <= 5:
             summary_parts.append(f"safe: {safe_vars}")
         else:
@@ -106,7 +105,7 @@ class NPXServerProcess:
             NPXLauncherError: If server fails to start or times out
         """
         try:
-            # Parse and prepare the command
+
             cmd_parts = self._parse_command()
             env = self._prepare_environment()
 
@@ -118,7 +117,6 @@ class NPXServerProcess:
             else:
                 logger.debug("Environment variable logging disabled for security")
 
-            # Start the process
             self.process = subprocess.Popen(
                 cmd_parts,
                 env=env,
@@ -132,7 +130,6 @@ class NPXServerProcess:
 
             logger.info(f"Process started with PID: {self.process.pid}")
 
-            # Wait for server to be ready and extract URL
             self.server_url = await self._wait_for_server_ready()
 
             logger.info(f"NPX server started successfully at {self.server_url}")
@@ -140,7 +137,7 @@ class NPXServerProcess:
 
         except NPXLauncherError:
             await self.stop()
-            raise  # Re-raise NPXLauncherError as-is
+            raise
         except Exception as e:
             await self.stop()
             raise NPXLauncherError(f"Failed to start NPX server: {e}")
@@ -149,20 +146,18 @@ class NPXServerProcess:
         """Stop the NPX server process."""
         if self.process:
             try:
-                # Try graceful shutdown first
+
                 self.process.terminate()
 
-                # Wait a bit for graceful shutdown
                 try:
                     await asyncio.wait_for(
                         asyncio.create_task(self._wait_for_process_end()), timeout=5.0
                     )
                 except asyncio.TimeoutError:
-                    # Force kill if graceful shutdown failed
+
                     logger.warning("Graceful shutdown timed out, forcing kill")
                     self.process.kill()
 
-                # Clean up
                 self.process = None
                 self.server_url = None
 
@@ -173,21 +168,18 @@ class NPXServerProcess:
 
     def _parse_command(self) -> List[str]:
         """Parse the NPX command into components."""
-        # Handle environment variables at the start of command
+
         command = self.config.command.strip()
 
-        # Split on && to handle env vars
         if "&&" in command:
             parts = command.split("&&")
-            # The NPX command should be the last part
+
             npx_command = parts[-1].strip()
         else:
             npx_command = command
 
-        # Parse the NPX command
         cmd_parts = shlex.split(npx_command)
 
-        # Ensure we're using npx
         if not cmd_parts or cmd_parts[0] != "npx":
             raise NPXLauncherError(
                 f"Command must start with 'npx', got: {cmd_parts[0] if cmd_parts else 'empty'}"
@@ -199,14 +191,12 @@ class NPXServerProcess:
         """Prepare environment variables for the process."""
         env = os.environ.copy()
 
-        # Add configured environment variables
         env.update(self.config.env_vars)
 
-        # Extract env vars from command if present
         command = self.config.command.strip()
         if "&&" in command:
             env_part = command.split("&&")[0].strip()
-            # Parse environment variable assignments
+
             env_assignments = self._parse_env_assignments(env_part)
             env.update(env_assignments)
 
@@ -216,17 +206,15 @@ class NPXServerProcess:
         """Parse environment variable assignments from string."""
         env_vars = {}
 
-        # Look for VAR=value patterns
-        # Handle both 'export VAR=value' and 'VAR=value' formats
         patterns = [
-            r"export\s+([A-Z_][A-Z0-9_]*)=([^\s&]+)",  # export VAR=value
-            r"([A-Z_][A-Z0-9_]*)=([^\s&]+)",  # VAR=value
+            r"export\s+([A-Z_][A-Z0-9_]*)=([^\s&]+)",
+            r"([A-Z_][A-Z0-9_]*)=([^\s&]+)",
         ]
 
         for pattern in patterns:
             matches = re.findall(pattern, env_string)
             for var_name, var_value in matches:
-                # Remove quotes if present
+
                 var_value = var_value.strip("\"'")
                 env_vars[var_name] = var_value
 
@@ -244,7 +232,6 @@ class NPXServerProcess:
             f"Waiting for NPX server to start (timeout: {self._startup_timeout}s)"
         )
 
-        # Make stdout and stderr non-blocking
         self._make_non_blocking(self.process.stdout)
         self._make_non_blocking(self.process.stderr)
 
@@ -253,8 +240,7 @@ class NPXServerProcess:
             loop_count += 1
             current_time = time.time()
 
-            # Log progress every 5 seconds
-            if loop_count % 50 == 0:  # Every 5 seconds (50 * 0.1s sleep)
+            if loop_count % 50 == 0:
                 elapsed = current_time - start_time
                 process_alive = self.process.poll() is None
                 logger.info(
@@ -265,7 +251,6 @@ class NPXServerProcess:
                         f"No output received for {current_time - last_activity:.1f}s"
                     )
 
-                # If no output for too long, try to check if process is doing something
                 if current_time - last_activity > 20 and process_alive:
                     logger.warning(
                         "Process is running but producing no output. This might indicate:"
@@ -276,7 +261,7 @@ class NPXServerProcess:
                     )
                     logger.warning("3. The server is waiting for input or has an error")
             if self.process.poll() is not None:
-                # Process has terminated - read any remaining output
+
                 remaining_stdout, remaining_stderr = self.process.communicate()
                 if remaining_stdout:
                     stdout_buffer += remaining_stdout
@@ -289,43 +274,39 @@ class NPXServerProcess:
                     f"Exit code: {self.process.returncode}\n{all_output}"
                 )
 
-            # Read available output without blocking
             try:
-                # Read from stdout
+
                 stdout_data = self._read_non_blocking(self.process.stdout)
                 if stdout_data:
                     last_activity = current_time
                     stdout_buffer += stdout_data
-                    # Process complete lines
+
                     lines = stdout_buffer.split("\n")
-                    stdout_buffer = lines[-1]  # Keep incomplete line
+                    stdout_buffer = lines[-1]
 
                     for line in lines[:-1]:
                         if line.strip():
                             output_lines.append(f"STDOUT: {line.strip()}")
                             logger.info(f"NPX stdout: {line.strip()}")
 
-                            # Try to extract server URL from output
                             url = self._extract_server_url(line)
                             if url:
                                 logger.info(f"Found server URL: {url}")
                                 return url
 
-                # Read from stderr
                 stderr_data = self._read_non_blocking(self.process.stderr)
                 if stderr_data:
                     last_activity = current_time
                     stderr_buffer += stderr_data
-                    # Process complete lines
+
                     lines = stderr_buffer.split("\n")
-                    stderr_buffer = lines[-1]  # Keep incomplete line
+                    stderr_buffer = lines[-1]
 
                     for line in lines[:-1]:
                         if line.strip():
                             output_lines.append(f"STDERR: {line.strip()}")
                             logger.info(f"NPX stderr: {line.strip()}")
 
-                            # Try to extract server URL from stderr too
                             url = self._extract_server_url(line)
                             if url:
                                 logger.info(f"Found server URL in stderr: {url}")
@@ -336,28 +317,23 @@ class NPXServerProcess:
 
             await asyncio.sleep(0.1)
 
-        # Timeout reached - try fallback detection
         logger.warning(
             f"Timeout reached after {self._startup_timeout}s, trying fallback server detection..."
         )
 
-        # Try common ports for MCP servers
         fallback_url = await self._try_fallback_detection()
         if fallback_url:
             logger.info(f"Fallback detection found server at: {fallback_url}")
             return fallback_url
 
-        # No fallback worked, raise timeout error
         all_output = "\n".join(output_lines)
 
-        # Add process status to error message
         process_status = (
             "running"
             if self.process.poll() is None
             else f"terminated (exit code: {self.process.returncode})"
         )
 
-        # Generate troubleshooting suggestions
         troubleshooting = self._generate_troubleshooting_suggestions(
             all_output, process_status
         )
@@ -371,19 +347,16 @@ class NPXServerProcess:
 
     def _extract_server_url(self, line: str) -> Optional[str]:
         """Extract server URL from output line."""
-        # Common patterns for MCP server URLs - more comprehensive
+
         url_patterns = [
-            # Explicit server messages
             r"(?:Server|MCP|server)\s+(?:running|started|listening)\s+(?:on|at)?\s*(https?://[^\s]+)",
             r"(?:Available|Serving)\s+(?:on|at)?\s*(https?://[^\s]+)",
             r"(?:URL|url):\s*(https?://[^\s]+)",
             r"(?:Listening|listening)\s+(?:on|at)?\s*(https?://[^\s]+)",
-            # Generic URL patterns
             r"(https?://(?:localhost|127\.0\.0\.1):\d+(?:/[^\s]*)?)",
             r"(http://[^\s:]+:\d+(?:/[^\s]*)?)",
-            # Port-based patterns (common for development servers)
-            r"(?:port|Port)\s+(\d+)",  # Extract port and construct URL
-            r"(?:localhost|127\.0\.0\.1):(\d+)",  # Extract localhost:port
+            r"(?:port|Port)\s+(\d+)",
+            r"(?:localhost|127\.0\.0\.1):(\d+)",
         ]
 
         for pattern in url_patterns:
@@ -391,13 +364,11 @@ class NPXServerProcess:
             if match:
                 url_or_port = match.group(1).rstrip(".,;")
 
-                # If we found just a port number, construct the URL
                 if url_or_port.isdigit():
                     url = f"http://localhost:{url_or_port}"
                 else:
                     url = url_or_port
 
-                # Validate URL format
                 if self._is_valid_url(url):
                     return url
 
@@ -415,21 +386,19 @@ class NPXServerProcess:
         """Try to detect server on common ports as a fallback."""
         import socket
 
-        # Common ports used by MCP servers and development tools
         common_ports = [3000, 3001, 8000, 8080, 4000, 5000, 9000]
 
-        # If a specific port was configured, try it first
         if self.config.port:
             common_ports.insert(0, self.config.port)
 
         for port in common_ports:
             try:
-                # Try to connect to the port
+
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.settimeout(1.0)  # Quick timeout
+                    sock.settimeout(1.0)
                     result = sock.connect_ex(("localhost", port))
                     if result == 0:
-                        # Port is open, try to validate it's an HTTP server
+
                         test_url = f"http://localhost:{port}"
                         if await self._test_http_endpoint(test_url):
                             return test_url
@@ -446,7 +415,7 @@ class NPXServerProcess:
 
             async with httpx.AsyncClient(timeout=2.0) as client:
                 await client.get(url)
-                # Any HTTP response (even 404) indicates a web server
+
                 return True
         except Exception:
             return False
@@ -480,7 +449,6 @@ class NPXServerProcess:
             suggestions.append("- Required environment variables are set")
             suggestions.append("- Dependencies are installed")
 
-        # Add command-specific suggestions
         cmd_parts = self._parse_command()
         if len(cmd_parts) > 1:
             package_name = cmd_parts[1]
@@ -495,10 +463,10 @@ class NPXServerProcess:
             return
 
         if sys.platform == "win32":
-            # On Windows, we'll use polling instead of making truly non-blocking
+
             pass
         else:
-            # Unix-like systems
+
             fd = file_obj.fileno()
             flags = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
@@ -509,7 +477,7 @@ class NPXServerProcess:
             return ""
 
         if sys.platform == "win32":
-            # Windows: use select to check if data is available
+
             try:
                 ready, _, _ = select.select([file_obj], [], [], 0)
                 if ready:
@@ -519,7 +487,7 @@ class NPXServerProcess:
             except (OSError, ValueError):
                 return ""
         else:
-            # Unix-like systems: use non-blocking read
+
             try:
                 data = file_obj.read()
                 return data if data else ""
@@ -555,7 +523,7 @@ class NPXServerManager:
         Returns:
             Server URL once ready
         """
-        # Parse environment variables and command
+
         env_vars = kwargs.get("env_vars", {})
 
         config = NPXServerConfig(
@@ -570,7 +538,6 @@ class NPXServerManager:
         server = NPXServerProcess(config)
         server_url = await server.start()
 
-        # Store for cleanup later
         self._active_servers[server_url] = server
 
         return server_url
@@ -609,7 +576,6 @@ def parse_npx_command(command: str) -> Tuple[str, Dict[str, str]]:
         env_part = parts[0].strip()
         npx_part = "&&".join(parts[1:]).strip()
 
-        # Parse environment variables
         env_patterns = [
             r"export\s+([A-Z_][A-Z0-9_]*)=([^\s&]+)",
             r"([A-Z_][A-Z0-9_]*)=([^\s&]+)",
@@ -628,7 +594,7 @@ def parse_npx_command(command: str) -> Tuple[str, Dict[str, str]]:
 
 def is_npx_command(command: str) -> bool:
     """Check if a command is an NPX command."""
-    # Clean up the command to get the main part
+
     if "&&" in command:
         command = command.split("&&")[-1].strip()
 

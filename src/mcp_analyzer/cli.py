@@ -67,16 +67,16 @@ def analyze(
     they follow Anthropic's recommendations for AI agent integration.
 
     Examples:
-      # Diagnose HTTP server
+
       mcp-doctor analyze --target http://localhost:8000/mcp
 
-      # Diagnose NPX server
+
       mcp-doctor analyze --target "npx firecrawl-mcp"
 
-      # Diagnose NPX server with environment variables
+
       mcp-doctor analyze --target "export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp"
 
-      # Diagnose NPX server with JSON env vars
+
       mcp-doctor analyze --target "npx firecrawl-mcp" --env-vars '{"FIRECRAWL_API_KEY": "abc123"}'
     """
     is_npx = is_npx_command(target)
@@ -89,7 +89,7 @@ def analyze(
     console.print(f"Check Type: [yellow]{check.value}[/yellow]\n")
 
     try:
-        # Prepare NPX arguments
+
         npx_kwargs = {}
         if env_vars:
             import json
@@ -106,10 +106,8 @@ def analyze(
         if no_env_logging:
             npx_kwargs["log_env_vars"] = False
 
-        # Run the analysis
         result = asyncio.run(_run_analysis(target, check, timeout, verbose, npx_kwargs))
 
-        # Format and display results
         formatter = ReportFormatter(output_format.value)
         formatter.display_results(result, verbose)
 
@@ -126,14 +124,13 @@ async def _run_analysis(
     if npx_kwargs is None:
         npx_kwargs = {}
 
-    # Initialize MCP client
     client = MCPClient(target, timeout=timeout, **npx_kwargs)
 
     is_npx = is_npx_command(target)
 
     if is_npx:
         with console.status("[bold green]Launching NPX server..."):
-            # This will trigger server launch in the client
+
             server_info = await client.get_server_info()
             tools = await client.get_tools()
 
@@ -141,7 +138,7 @@ async def _run_analysis(
         console.print(f"✅ NPX server launched at [cyan]{actual_url}[/cyan]")
     else:
         with console.status("[bold green]Connecting to MCP server..."):
-            # Test connection and get tools
+
             server_info = await client.get_server_info()
             tools = await client.get_tools()
 
@@ -159,7 +156,7 @@ async def _run_analysis(
     }
 
     try:
-        # Run description analysis
+
         if check == CheckType.descriptions or check == CheckType.all:
             with console.status("[bold green]Analyzing tool descriptions..."):
                 checker = DescriptionChecker()
@@ -167,7 +164,7 @@ async def _run_analysis(
                 results["checks"]["descriptions"] = description_results
 
     finally:
-        # Clean up NPX server if needed
+
         await client.close()
 
     return results
