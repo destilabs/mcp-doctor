@@ -9,6 +9,18 @@
 [![GitHub stars](https://img.shields.io/github/stars/destilabs/mcp-doctor?style=social)](https://github.com/destilabs/mcp-doctor/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/destilabs/mcp-doctor)](https://github.com/destilabs/mcp-doctor/issues)
 
+## 🚀 **30-Day Development Sprint**
+
+I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
+
+**Progress:** 0/30 PRs completed
+```
+[                              ] 0% (0/30)
+```
+**Days Remaining:** 30 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
+
+---
+
 MCP Doctor is your go-to diagnostic tool for analyzing MCP servers and ensuring they follow best practices for AI agent integration. Just like a medical doctor diagnoses health issues, MCP Doctor diagnoses your MCP servers to ensure they're agent-friendly, performant, and compliant with [Anthropic's best practices](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
 ## 🎯 What is MCP Doctor?

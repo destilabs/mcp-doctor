@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -511,7 +511,7 @@ class MCPClient:
                 try:
                     response = await session.get(endpoint)
                     if response.status_code == 200:
-                        return response.json()
+                        return cast(Dict[str, Any], response.json())
                 except httpx.HTTPStatusError:
                     continue
 

@@ -2,7 +2,7 @@
 
 import asyncio
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import typer
 from rich.console import Console
@@ -146,7 +146,7 @@ async def _run_analysis(
 
     console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
 
-    results = {
+    results: Dict[str, Any] = {
         "server_target": target,
         "server_url": actual_url,
         "server_info": server_info,
