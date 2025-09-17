@@ -5,6 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![CI](https://github.com/destilabs/mcp-doctor/workflows/CI/badge.svg)](https://github.com/destilabs/mcp-doctor/actions)
+[![GitHub stars](https://img.shields.io/github/stars/destilabs/mcp-doctor?style=social)](https://github.com/destilabs/mcp-doctor/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/destilabs/mcp-doctor)](https://github.com/destilabs/mcp-doctor/issues)
 
 MCP Doctor is your go-to diagnostic tool for analyzing MCP servers and ensuring they follow best practices for AI agent integration. Just like a medical doctor diagnoses health issues, MCP Doctor diagnoses your MCP servers to ensure they're agent-friendly, performant, and compliant with [Anthropic's best practices](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
