@@ -1,5 +1,7 @@
 """STDIO-based MCP client for direct subprocess communication."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging

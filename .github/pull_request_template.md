@@ -17,7 +17,7 @@ Brief description of what this PR does.
 - [ ] Tests pass locally with `pytest tests/`
 - [ ] Code is formatted with `black src/ tests/`
 - [ ] Imports are sorted with `isort src/ tests/`
-- [ ] Type checking with `mypy src/ --ignore-missing-imports --no-strict-optional --allow-untyped-defs`
+- [ ] Type checking with `mypy src/`
 - [ ] New tests added for new functionality (if applicable)
 
 ## Checklist
