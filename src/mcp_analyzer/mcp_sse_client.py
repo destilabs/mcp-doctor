@@ -150,9 +150,7 @@ class MCPSSEClient:
                         pass
 
                 if message.id is not None:
-                    logger.debug(
-                        f"Waiting for SSE response for ID: {message.id}"
-                    )
+                    logger.debug(f"Waiting for SSE response for ID: {message.id}")
                     return await self._wait_for_sse_response(message.id)
                 return MCPMessage()
 
@@ -219,13 +217,13 @@ class MCPSSEClient:
             logger.error(f"SSE listener failed: {e}")
         finally:
             logger.debug("SSE listener stopped")
-    
+
     async def _wait_for_sse_response(self, request_id: str) -> MCPMessage:
         """Wait for SSE response with specific request ID."""
         # Create a future for this request
         future = asyncio.Future()
         self._pending_requests[request_id] = future
-        
+
         try:
             response = await asyncio.wait_for(future, timeout=self.timeout)
             return response
