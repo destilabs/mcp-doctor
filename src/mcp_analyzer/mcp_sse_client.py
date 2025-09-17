@@ -1,5 +1,7 @@
 """SSE-based MCP client for Server-Sent Events transport."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -46,7 +48,7 @@ class MCPSSEClient:
         self._session_id: Optional[str] = None
         self._messages_url: Optional[str] = None
         self._request_id = 0
-        self._pending_requests: Dict[str, asyncio.Future] = {}
+        self._pending_requests: Dict[str, asyncio.Future[MCPMessage]] = {}
         self._running = False
         self._sse_listener_task: Optional[asyncio.Task] = None
         self._endpoint_event: Optional[asyncio.Event] = None
@@ -221,7 +223,7 @@ class MCPSSEClient:
     async def _wait_for_sse_response(self, request_id: str) -> MCPMessage:
         """Wait for SSE response with specific request ID."""
         # Create a future for this request
-        future = asyncio.Future()
+        future: asyncio.Future[MCPMessage] = asyncio.Future()
         self._pending_requests[request_id] = future
 
         try:

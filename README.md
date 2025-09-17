@@ -5,6 +5,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![CI](https://github.com/destilabs/mcp-doctor/workflows/CI/badge.svg)](https://github.com/destilabs/mcp-doctor/actions)
+[![GitHub stars](https://img.shields.io/github/stars/destilabs/mcp-doctor?style=social)](https://github.com/destilabs/mcp-doctor/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/destilabs/mcp-doctor)](https://github.com/destilabs/mcp-doctor/issues)
+
+## 🚀 **30-Day Development Sprint**
+
+I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
+
+**Progress:** 1/30 PRs completed
+```
+[                              ] 3% (1/30)
+```
+**Days Remaining:** 30 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
+
+---
 
 MCP Doctor is your go-to diagnostic tool for analyzing MCP servers and ensuring they follow best practices for AI agent integration. Just like a medical doctor diagnoses health issues, MCP Doctor diagnoses your MCP servers to ensure they're agent-friendly, performant, and compliant with [Anthropic's best practices](https://www.anthropic.com/engineering/writing-tools-for-agents).
 
@@ -70,6 +85,18 @@ mcp-doctor analyze --target "export FIRECRAWL_API_KEY=your_key && npx firecrawl-
 # Get detailed diagnostic output
 mcp-doctor analyze --target http://localhost:8000/mcp --verbose
 ```
+
+## 🎬 Demonstrations
+
+### NPX Server Analysis
+See MCP Doctor in action analyzing an NPX-launched MCP server:
+
+[📹 Watch NPX Analysis Demo](./docs/video/MCP%20doctor%20_%20npx.mp4)
+
+### HTTP Server Analysis  
+Watch MCP Doctor diagnose an HTTP MCP server:
+
+[📹 Watch HTTP Analysis Demo](./docs/video/MCP-doctor%20_%20http.mp4)
 
 ## 🩺 Diagnostic Capabilities
 

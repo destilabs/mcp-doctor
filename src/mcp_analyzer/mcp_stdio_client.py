@@ -1,5 +1,7 @@
 """STDIO-based MCP client for direct subprocess communication."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -46,7 +48,7 @@ class MCPStdioClient:
         self.process: Optional[subprocess.Popen] = None
         self._request_id = 0
         self._is_npx = is_npx_command(command)
-        self._response_queue: Queue = Queue()
+        self._response_queue: Queue[MCPMessage] = Queue()
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
 
