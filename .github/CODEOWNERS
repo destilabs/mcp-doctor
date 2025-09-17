@@ -1,0 +1,13 @@
+# Global code ownership
+# All files in the repository require review from the repository owner
+* @mykhailokushnir
+
+# Specific ownership for critical files
+/.github/ @mykhailokushnir
+/src/mcp_analyzer/ @mykhailokushnir
+/tests/ @mykhailokushnir
+/pyproject.toml @mykhailokushnir
+/README.md @mykhailokushnir
+
+# Scripts and configuration
+/scripts/ @mykhailokushnir

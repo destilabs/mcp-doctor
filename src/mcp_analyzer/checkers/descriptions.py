@@ -197,7 +197,7 @@ class DescriptionChecker:
         jargon_found = [
             word
             for word in self.technical_jargon
-            if re.search(r'\b' + re.escape(word.lower()) + r'\b', description.lower())
+            if re.search(r"\b" + re.escape(word.lower()) + r"\b", description.lower())
         ]
         if jargon_found:
             issues.append(
@@ -309,15 +309,13 @@ class DescriptionChecker:
 
         description_lower = description.lower()
 
-
         has_clear_action = any(
-            re.search(r'\b' + re.escape(verb) + r'\b', description_lower)
+            re.search(r"\b" + re.escape(verb) + r"\b", description_lower)
             for verb in clear_action_verbs
         )
 
-
         has_vague_terms = any(
-            re.search(r'\b' + re.escape(term) + r'\b', description_lower)
+            re.search(r"\b" + re.escape(term) + r"\b", description_lower)
             for term in vague_terms
         )
 

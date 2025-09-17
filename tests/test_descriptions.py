@@ -128,7 +128,7 @@ class TestDescriptionChecker:
         ]
 
         assert len(substring_jargon_issues) == 0
-        
+
         assert len(actual_jargon_issues) == 1
         assert "orm" in actual_jargon_issues[0].message.lower()
 
