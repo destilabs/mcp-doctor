@@ -197,7 +197,7 @@ class DescriptionChecker:
         jargon_found = [
             word
             for word in self.technical_jargon
-            if word.lower() in description.lower()
+            if re.search(r'\b' + re.escape(word.lower()) + r'\b', description.lower())
         ]
         if jargon_found:
             issues.append(
@@ -289,7 +289,7 @@ class DescriptionChecker:
     def _has_clear_purpose(self, description: str) -> bool:
         """Check if description clearly states the tool's purpose."""
 
-        action_verbs = [
+        clear_action_verbs = [
             "create",
             "update",
             "delete",
@@ -299,26 +299,29 @@ class DescriptionChecker:
             "search",
             "find",
             "list",
-            "manage",
-            "handle",
-            "process",
             "generate",
             "calculate",
             "validate",
             "check",
         ]
 
+        vague_terms = ["handle", "manage", "process", "deal with", "stuff", "things"]
+
         description_lower = description.lower()
 
-        has_action = any(verb in description_lower for verb in action_verbs)
 
-        vague_terms = ["handle", "manage", "process", "deal with"]
-        is_vague = (
-            any(term in description_lower for term in vague_terms)
-            and len(description) < 50
+        has_clear_action = any(
+            re.search(r'\b' + re.escape(verb) + r'\b', description_lower)
+            for verb in clear_action_verbs
         )
 
-        return has_action and not is_vague
+
+        has_vague_terms = any(
+            re.search(r'\b' + re.escape(term) + r'\b', description_lower)
+            for term in vague_terms
+        )
+
+        return has_clear_action and not has_vague_terms
 
     def _is_poor_parameter_name(self, param_name: str) -> bool:
         """Check if parameter name could be improved."""

@@ -1,10 +1,7 @@
 """Tests for description checker."""
 
-import pytest
-
 from mcp_analyzer.checkers.descriptions import (
     DescriptionChecker,
-    DescriptionIssue,
     IssueType,
     Severity,
 )
@@ -107,6 +104,33 @@ class TestDescriptionChecker:
         assert "api" in jargon_issues[0].message.lower()
         assert "json" in jargon_issues[0].message.lower()
         assert "crud" in jargon_issues[0].message.lower()
+
+    def test_technical_jargon_false_positives(self):
+        """Test that technical jargon detection avoids false positives from substrings."""
+        tool_with_substring = MCPTool(
+            name="test_tool",
+            description="Manage user information and data transformation processes",
+        )
+
+        tool_with_actual_jargon = MCPTool(
+            name="test_tool",
+            description="Configure the ORM settings for database mapping",
+        )
+
+        substring_issues = self.checker._analyze_single_tool(tool_with_substring)
+        jargon_issues = self.checker._analyze_single_tool(tool_with_actual_jargon)
+
+        substring_jargon_issues = [
+            i for i in substring_issues if i.issue_type == IssueType.TECHNICAL_JARGON
+        ]
+        actual_jargon_issues = [
+            i for i in jargon_issues if i.issue_type == IssueType.TECHNICAL_JARGON
+        ]
+
+        assert len(substring_jargon_issues) == 0
+        
+        assert len(actual_jargon_issues) == 1
+        assert "orm" in actual_jargon_issues[0].message.lower()
 
     def test_clear_purpose_detection(self):
         """Test detection of unclear purpose in descriptions."""

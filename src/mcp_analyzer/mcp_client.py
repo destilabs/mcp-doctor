@@ -91,7 +91,6 @@ class MCPClient:
             logger.info(f"Probing endpoint type for: {url}")
 
             async with httpx.AsyncClient(timeout=5.0) as client:
-                # Make a quick HEAD request first to check headers
                 try:
                     head_response = await client.head(url)
                     if head_response.status_code == 406:
@@ -106,10 +105,8 @@ class MCPClient:
                         return "sse"
 
                 except httpx.HTTPStatusError:
-                    # HEAD might not be supported, try GET with short timeout
                     pass
 
-                # Try a quick GET request to see response type
                 try:
                     response = await asyncio.wait_for(client.get(url), timeout=3.0)
 
@@ -133,7 +130,6 @@ class MCPClient:
                         return "http"
 
                 except asyncio.TimeoutError:
-                    # If it times out on a quick request, it might be SSE
                     logger.warning("Quick probe timed out, might be SSE endpoint")
                     return "sse"
 
@@ -144,8 +140,6 @@ class MCPClient:
     async def _try_get_server_info_from_sse(self, sse_url: str) -> str:
         """Try to get server information from SSE endpoint or related paths."""
         try:
-            # Try common paths for server info
-            # Properly extract base URL without breaking domain
             if sse_url.endswith("/mcp"):
                 base_url = sse_url[:-4]  # Remove '/mcp'
             else:
@@ -163,11 +157,9 @@ class MCPClient:
                         if response.status_code == 200:
                             data = response.json()
                             if isinstance(data, dict):
-                                # Extract useful server information
                                 name = data.get("message", data.get("name", "Unknown"))
                                 version = data.get("version", "Unknown")
 
-                                # Add additional details if available
                                 details = []
                                 if "documentation" in data:
                                     details.append("Has API documentation")
