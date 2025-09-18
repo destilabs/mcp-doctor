@@ -262,7 +262,13 @@ mcp_temp/
 # API keys and secrets (extra protection)
 *api_key*
 *secret*
-*token*
+*token*.txt
+*token*.json
+*token*.yaml
+*token*.yml
+*token*.env
+*_token
+*-token
 *.key
 *.pem
 *.p12

@@ -58,12 +58,12 @@ class MCPSSEClient:
         self._instructions: Optional[str] = None
         self._custom_headers = headers or {}
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> MCPSSEClient:
         """Async context manager entry."""
         await self._connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.close()
 
@@ -134,6 +134,9 @@ class MCPSSEClient:
                 headers["mcp-protocol-version"] = self._protocol_version
             headers.update(self._custom_headers)
 
+            if not self._session:
+                raise RuntimeError("SSE client session not initialized")
+
             response = await self._session.post(
                 self._messages_url,
                 json=request_data,
@@ -174,6 +177,10 @@ class MCPSSEClient:
 
             while self._running:
                 try:
+                    if not self._session:
+                        logger.error("SSE session not available, stopping listener")
+                        break
+
                     async with self._session.stream(
                         "GET",
                         self.sse_url,
@@ -260,6 +267,21 @@ class MCPSSEClient:
 
         tools = response.result.get("tools", []) if response.result else []
         return tools
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Call a tool via SSE."""
+        request = MCPMessage(
+            id=self._next_id(),
+            method="tools/call",
+            params={"name": name, "arguments": arguments},
+        )
+
+        response = await self._send_request(request)
+
+        if response.error:
+            raise Exception(f"Failed to call tool {name}: {response.error}")
+
+        return response.result or {}
 
     async def close(self) -> None:
         """Close the SSE connection."""

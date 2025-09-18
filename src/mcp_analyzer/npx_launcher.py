@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 if sys.platform != "win32":
     import fcntl
@@ -232,6 +232,9 @@ class NPXServerProcess:
             f"Waiting for NPX server to start (timeout: {self._startup_timeout}s)"
         )
 
+        if not self.process:
+            raise NPXLauncherError("Process not started")
+
         self._make_non_blocking(self.process.stdout)
         self._make_non_blocking(self.process.stderr)
 
@@ -242,7 +245,7 @@ class NPXServerProcess:
 
             if loop_count % 50 == 0:
                 elapsed = current_time - start_time
-                process_alive = self.process.poll() is None
+                process_alive = self.process.poll() is None if self.process else False
                 logger.info(
                     f"Still waiting for server... ({elapsed:.1f}s elapsed, process alive: {process_alive})"
                 )
@@ -260,7 +263,7 @@ class NPXServerProcess:
                         "2. The server is starting but not logging to stdout/stderr"
                     )
                     logger.warning("3. The server is waiting for input or has an error")
-            if self.process.poll() is not None:
+            if self.process and self.process.poll() is not None:
 
                 remaining_stdout, remaining_stderr = self.process.communicate()
                 if remaining_stdout:
@@ -271,12 +274,14 @@ class NPXServerProcess:
                 all_output = f"STDOUT:\n{stdout_buffer}\nSTDERR:\n{stderr_buffer}"
                 raise NPXLauncherError(
                     f"NPX process terminated unexpectedly. "
-                    f"Exit code: {self.process.returncode}\n{all_output}"
+                    f"Exit code: {self.process.returncode if self.process else 'unknown'}\n{all_output}"
                 )
 
             try:
 
-                stdout_data = self._read_non_blocking(self.process.stdout)
+                stdout_data = (
+                    self._read_non_blocking(self.process.stdout) if self.process else ""
+                )
                 if stdout_data:
                     last_activity = current_time
                     stdout_buffer += stdout_data
@@ -294,7 +299,9 @@ class NPXServerProcess:
                                 logger.info(f"Found server URL: {url}")
                                 return url
 
-                stderr_data = self._read_non_blocking(self.process.stderr)
+                stderr_data = (
+                    self._read_non_blocking(self.process.stderr) if self.process else ""
+                )
                 if stderr_data:
                     last_activity = current_time
                     stderr_buffer += stderr_data
@@ -330,8 +337,8 @@ class NPXServerProcess:
 
         process_status = (
             "running"
-            if self.process.poll() is None
-            else f"terminated (exit code: {self.process.returncode})"
+            if self.process and self.process.poll() is None
+            else f"terminated (exit code: {self.process.returncode if self.process else 'unknown'})"
         )
 
         troubleshooting = self._generate_troubleshooting_suggestions(
@@ -457,7 +464,7 @@ class NPXServerProcess:
 
         return " ".join(suggestions)
 
-    def _make_non_blocking(self, file_obj) -> None:
+    def _make_non_blocking(self, file_obj: Any) -> None:
         """Make a file object non-blocking (cross-platform)."""
         if not file_obj:
             return
@@ -471,7 +478,7 @@ class NPXServerProcess:
             flags = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-    def _read_non_blocking(self, file_obj) -> str:
+    def _read_non_blocking(self, file_obj: Any) -> str:
         """Read from a file object without blocking (cross-platform)."""
         if not file_obj:
             return ""
@@ -482,6 +489,8 @@ class NPXServerProcess:
                 ready, _, _ = select.select([file_obj], [], [], 0)
                 if ready:
                     data = file_obj.read()
+                    if isinstance(data, bytes):
+                        return data.decode("utf-8", errors="ignore")
                     return data if data else ""
                 return ""
             except (OSError, ValueError):
@@ -490,6 +499,8 @@ class NPXServerProcess:
 
             try:
                 data = file_obj.read()
+                if isinstance(data, bytes):
+                    return data.decode("utf-8", errors="ignore")
                 return data if data else ""
             except (BlockingIOError, OSError):
                 return ""
@@ -509,10 +520,10 @@ class NPXLauncherError(Exception):
 class NPXServerManager:
     """High-level manager for NPX MCP servers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_servers: Dict[str, NPXServerProcess] = {}
 
-    async def launch_server(self, command: str, **kwargs) -> str:
+    async def launch_server(self, command: str, **kwargs: Any) -> str:
         """
         Launch an NPX MCP server and return its URL.
 

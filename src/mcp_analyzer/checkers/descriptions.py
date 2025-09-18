@@ -50,7 +50,7 @@ class DescriptionChecker:
     - Natural language over technical jargon
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.ambiguous_terms = [
             "id",
             "data",

@@ -46,8 +46,8 @@ class MCPClient:
         server_target: str,
         timeout: int = 30,
         transport: str = "auto",
-        **npx_kwargs,
-    ):
+        **npx_kwargs: Any,
+    ) -> None:
         """
         Initialize MCP client.
 
@@ -185,7 +185,7 @@ class MCPClient:
             logger.debug(f"Error getting server info: {e}")
             return "Unable to retrieve server information"
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "MCPClient":
         """Async context manager entry."""
         await self._ensure_server_ready()
 
@@ -194,7 +194,7 @@ class MCPClient:
 
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         if self._session:
             await self._session.aclose()
@@ -297,6 +297,8 @@ class MCPClient:
 
         try:
             if self._transport == "stdio":
+                if not self._stdio_client:
+                    raise MCPClientError("STDIO client not initialized")
                 info = await self._stdio_client.get_server_info()
                 return MCPServerInfo(
                     protocol_version=info.get("protocol_version"),
@@ -305,6 +307,8 @@ class MCPClient:
                     capabilities=info.get("capabilities", {}),
                 )
             elif self._transport == "sse":
+                if not self._sse_client:
+                    raise MCPClientError("SSE client not initialized")
                 info = await self._sse_client.get_server_info()
                 return MCPServerInfo(
                     protocol_version=info.get("protocol_version"),
@@ -403,8 +407,12 @@ class MCPClient:
 
         try:
             if self._transport == "stdio":
+                if not self._stdio_client:
+                    raise MCPClientError("STDIO client not initialized")
                 tools_data = await self._stdio_client.list_tools()
             elif self._transport == "sse":
+                if not self._sse_client:
+                    raise MCPClientError("SSE client not initialized")
                 tools_data = await self._sse_client.list_tools()
             else:
                 server_url = self.get_server_url()
@@ -521,6 +529,38 @@ class MCPClient:
         except Exception as e:
             logger.error(f"Error fetching tool details for {tool_name}: {e}")
             return None
+
+    async def call_tool(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Call a tool with the given arguments.
+
+        Args:
+            tool_name: Name of the tool to call
+            arguments: Arguments to pass to the tool
+
+        Returns:
+            Tool execution result
+
+        Raises:
+            MCPClientError: If the tool call fails
+        """
+        await self._ensure_server_ready()
+
+        try:
+            if self._stdio_client:
+                # Use STDIO client for NPX servers
+                return await self._stdio_client.call_tool(tool_name, arguments)
+            elif self._sse_client:
+                # Use SSE client for SSE servers
+                return await self._sse_client.call_tool(tool_name, arguments)
+            else:
+                raise NotImplementedError("HTTP transport not supported")
+        except Exception as e:
+            if isinstance(e, MCPClientError):
+                raise
+            raise MCPClientError(f"Failed to call tool {tool_name}: {e}")
 
     async def close(self) -> None:
         """Close connections and stop servers."""
