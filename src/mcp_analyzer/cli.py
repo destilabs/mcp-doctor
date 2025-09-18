@@ -90,7 +90,6 @@ def analyze(
         console.print(f"Server URL: [cyan]{target}[/cyan]")
     console.print(f"Check Type: [yellow]{check.value}[/yellow]\n")
 
-
     try:
 
         npx_kwargs = {}

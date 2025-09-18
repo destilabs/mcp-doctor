@@ -53,7 +53,10 @@ class TestTokenEfficiencyChecker:
         assert self.checker._detect_verbose_identifiers(uuid_response) is True
 
         # Response with long hash
-        hash_response = {"hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0", "name": "test"}
+        hash_response = {
+            "hash": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0",
+            "name": "test",
+        }
         assert self.checker._detect_verbose_identifiers(hash_response) is True
 
         # Response with semantic identifiers
@@ -71,14 +74,18 @@ class TestTokenEfficiencyChecker:
             "updated_at": "2023-01-01T00:00:00Z",
             "metadata": {"internal": "data"},
             "debug": {"trace": "info"},
-            "name": "test"
+            "name": "test",
         }
         # This might be flagged as having low-value data
         result = self.checker._detect_low_value_data(timestamp_response)
         assert isinstance(result, bool)
 
         # Response with mostly high-value data
-        clean_response = {"name": "test", "description": "A test item", "status": "active"}
+        clean_response = {
+            "name": "test",
+            "description": "A test item",
+            "status": "active",
+        }
         assert self.checker._detect_low_value_data(clean_response) is False
 
     def test_generate_sample_value(self):
@@ -112,16 +119,16 @@ class TestTokenEfficiencyChecker:
             "properties": {
                 "query": {"type": "string", "description": "Search query"},
                 "limit": {"type": "integer", "description": "Result limit"},
-                "page": {"type": "integer", "description": "Page number"}
+                "page": {"type": "integer", "description": "Page number"},
             },
-            "required": ["query"]
+            "required": ["query"],
         }
 
         scenarios = self.checker._generate_test_scenarios(mock_tool)
-        
+
         assert len(scenarios) == 3
         assert all(isinstance(s, EvaluationScenario) for s in scenarios)
-        
+
         # Check scenario names
         scenario_names = [s.name for s in scenarios]
         assert "minimal" in scenario_names
@@ -131,7 +138,7 @@ class TestTokenEfficiencyChecker:
         # Minimal scenario should have required params only
         minimal = next(s for s in scenarios if s.name == "minimal")
         assert "query" in minimal.params
-        
+
         # Large scenario should have pagination with larger values
         large = next(s for s in scenarios if s.name == "large")
         if "limit" in large.params:
@@ -164,10 +171,7 @@ class TestTokenEfficiencyChecker:
         paginated_tool.name = "list_items"
         paginated_tool.description = "List all items"
         paginated_tool.input_schema = {
-            "properties": {
-                "limit": {"type": "integer"},
-                "offset": {"type": "integer"}
-            }
+            "properties": {"limit": {"type": "integer"}, "offset": {"type": "integer"}}
         }
 
         issues = self.checker._check_pagination_support(paginated_tool)
@@ -177,11 +181,7 @@ class TestTokenEfficiencyChecker:
         unpaginated_tool = MagicMock()
         unpaginated_tool.name = "list_all_users"
         unpaginated_tool.description = "List all users in the database"
-        unpaginated_tool.input_schema = {
-            "properties": {
-                "filter": {"type": "string"}
-            }
-        }
+        unpaginated_tool.input_schema = {"properties": {"filter": {"type": "string"}}}
 
         issues = self.checker._check_pagination_support(unpaginated_tool)
         assert len(issues) == 1
@@ -194,11 +194,7 @@ class TestTokenEfficiencyChecker:
         unfiltered_tool = MagicMock()
         unfiltered_tool.name = "search_documents"
         unfiltered_tool.description = "Search through documents"
-        unfiltered_tool.input_schema = {
-            "properties": {
-                "text": {"type": "string"}
-            }
-        }
+        unfiltered_tool.input_schema = {"properties": {"text": {"type": "string"}}}
 
         # Verify this tool is detected as returning collections
         assert self.checker._likely_returns_collections(unfiltered_tool) is True
@@ -214,11 +210,7 @@ class TestTokenEfficiencyChecker:
         detail_tool = MagicMock()
         detail_tool.name = "get_user_details"
         detail_tool.description = "Get detailed user information"
-        detail_tool.input_schema = {
-            "properties": {
-                "user_id": {"type": "string"}
-            }
-        }
+        detail_tool.input_schema = {"properties": {"user_id": {"type": "string"}}}
 
         issues = self.checker._check_response_format_control(detail_tool)
         assert len(issues) == 1
@@ -232,21 +224,19 @@ class TestTokenEfficiencyChecker:
         mock_tool = MagicMock()
         mock_tool.name = "test_tool"
         mock_tool.input_schema = {
-            "properties": {
-                "query": {"type": "string"}
-            },
-            "required": ["query"]
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
         }
 
         # Mock client
         mock_client = AsyncMock()
         mock_client.call_tool.return_value = {
             "result": "This is a test response with some content",
-            "status": "success"
+            "status": "success",
         }
 
         metrics = await self.checker._measure_response_sizes(mock_tool, mock_client)
-        
+
         assert metrics.tool_name == "test_tool"
         assert len(metrics.measurements) == 3  # Three scenarios
         assert metrics.avg_tokens > 0
@@ -268,7 +258,7 @@ class TestTokenEfficiencyChecker:
         mock_client.call_tool.side_effect = Exception("Tool execution failed")
 
         metrics = await self.checker._measure_response_sizes(mock_tool, mock_client)
-        
+
         assert metrics.tool_name == "failing_tool"
         assert len(metrics.measurements) == 3
         # All measurements should have errors
@@ -287,7 +277,7 @@ class TestTokenEfficiencyChecker:
                 response_time=1.0,
                 response_size_bytes=120000,
                 contains_low_value_data=False,
-                has_verbose_identifiers=True
+                has_verbose_identifiers=True,
             ),
             ResponseMetric(
                 scenario="typical",
@@ -295,15 +285,15 @@ class TestTokenEfficiencyChecker:
                 response_time=0.5,
                 response_size_bytes=20000,
                 contains_low_value_data=True,
-                has_verbose_identifiers=False
-            )
+                has_verbose_identifiers=False,
+            ),
         ]
 
         issues = self.checker._analyze_response_metrics(mock_metrics)
-        
+
         # Should find multiple issues
         assert len(issues) > 0
-        
+
         issue_types = [issue.issue_type for issue in issues]
         assert IssueType.OVERSIZED_RESPONSE in issue_types
         assert IssueType.VERBOSE_IDENTIFIERS in issue_types
@@ -317,35 +307,34 @@ class TestTokenEfficiencyChecker:
                 issue_type=IssueType.OVERSIZED_RESPONSE,
                 severity=Severity.WARNING,
                 message="Response too large",
-                suggestion="Add pagination"
+                suggestion="Add pagination",
             ),
             TokenEfficiencyIssue(
                 tool_name="tool2",
                 issue_type=IssueType.NO_PAGINATION,
                 severity=Severity.INFO,
                 message="No pagination",
-                suggestion="Add pagination"
+                suggestion="Add pagination",
             ),
             TokenEfficiencyIssue(
                 tool_name="tool3",
                 issue_type=IssueType.NO_PAGINATION,
                 severity=Severity.INFO,
                 message="No pagination",
-                suggestion="Add pagination"
-            )
+                suggestion="Add pagination",
+            ),
         ]
 
-        stats = {
-            "max_tokens_observed": 30000,
-            "tools_exceeding_limit": 1
-        }
+        stats = {"max_tokens_observed": 30000, "tools_exceeding_limit": 1}
 
         recommendations = self.checker._generate_recommendations(issues, stats)
-        
+
         assert len(recommendations) > 0
         assert any("response size limits" in rec.lower() for rec in recommendations)
         assert any("pagination" in rec.lower() for rec in recommendations)
-        assert any("global response size limits" in rec.lower() for rec in recommendations)
+        assert any(
+            "global response size limits" in rec.lower() for rec in recommendations
+        )
 
     def test_generate_recommendations_no_issues(self):
         """Test recommendation generation with no issues."""
@@ -353,6 +342,6 @@ class TestTokenEfficiencyChecker:
         stats = {"max_tokens_observed": 5000}
 
         recommendations = self.checker._generate_recommendations(issues, stats)
-        
+
         assert len(recommendations) == 1
         assert "good token efficiency" in recommendations[0].lower()

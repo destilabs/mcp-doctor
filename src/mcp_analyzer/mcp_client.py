@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 from .mcp_sse_client import MCPSSEClient
 from .mcp_stdio_client import MCPStdioClient
 from .npx_launcher import NPXLauncherError, NPXServerManager, is_npx_command
+from .mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ class MCPClient:
             logger.debug(f"Error getting server info: {e}")
             return "Unable to retrieve server information"
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> MCPClient:
         """Async context manager entry."""
         await self._ensure_server_ready()
 

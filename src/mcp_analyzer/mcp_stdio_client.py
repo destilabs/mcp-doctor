@@ -33,7 +33,7 @@ class MCPMessage(BaseModel):
 class MCPStdioClient:
     """MCP client that communicates via STDIO with subprocess."""
 
-    def __init__(self, command: str, timeout: int = 30, **kwargs):
+    def __init__(self, command: str, timeout: int = 30, **kwargs: Any) -> None:
         """
         Initialize STDIO MCP client.
 
@@ -52,7 +52,7 @@ class MCPStdioClient:
         self._reader_thread: Optional[threading.Thread] = None
         self._running = False
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> MCPStdioClient:
         """Async context manager entry."""
         await self._start_process()
         return self

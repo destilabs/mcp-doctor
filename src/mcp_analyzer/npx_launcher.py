@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 if sys.platform != "win32":
     import fcntl
@@ -457,7 +457,7 @@ class NPXServerProcess:
 
         return " ".join(suggestions)
 
-    def _make_non_blocking(self, file_obj) -> None:
+    def _make_non_blocking(self, file_obj: Any) -> None:
         """Make a file object non-blocking (cross-platform)."""
         if not file_obj:
             return
@@ -471,7 +471,7 @@ class NPXServerProcess:
             flags = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-    def _read_non_blocking(self, file_obj) -> str:
+    def _read_non_blocking(self, file_obj: Any) -> str:
         """Read from a file object without blocking (cross-platform)."""
         if not file_obj:
             return ""
@@ -509,10 +509,10 @@ class NPXLauncherError(Exception):
 class NPXServerManager:
     """High-level manager for NPX MCP servers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._active_servers: Dict[str, NPXServerProcess] = {}
 
-    async def launch_server(self, command: str, **kwargs) -> str:
+    async def launch_server(self, command: str, **kwargs: Any) -> str:
         """
         Launch an NPX MCP server and return its URL.
 
