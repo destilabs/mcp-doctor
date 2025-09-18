@@ -1,7 +1,7 @@
 """Report formatting and display utilities."""
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from rich.console import Console
 from rich.panel import Panel
@@ -246,7 +246,7 @@ class ReportFormatter:
                         metrics.tool_name,
                         f"{metrics.avg_tokens:,.0f}",
                         f"{metrics.max_tokens:,}",
-                        f"{scenario_count}/3",
+                        f"{scenario_count}/{len(metrics.measurements)}",
                         status,
                     )
 

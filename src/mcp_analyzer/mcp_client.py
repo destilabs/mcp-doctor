@@ -548,7 +548,7 @@ class MCPClient:
                 # Use SSE client for SSE servers
                 return await self._sse_client.call_tool(tool_name, arguments)
             else:
-                return NotImplementedError("HTTP transport not supported")
+                raise NotImplementedError("HTTP transport not supported")
         except Exception as e:
             if isinstance(e, MCPClientError):
                 raise
