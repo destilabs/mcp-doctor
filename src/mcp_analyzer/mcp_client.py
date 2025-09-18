@@ -10,7 +10,6 @@ from pydantic import BaseModel, ValidationError
 from .mcp_sse_client import MCPSSEClient
 from .mcp_stdio_client import MCPStdioClient
 from .npx_launcher import NPXLauncherError, NPXServerManager, is_npx_command
-from .mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +46,8 @@ class MCPClient:
         server_target: str,
         timeout: int = 30,
         transport: str = "auto",
-        **npx_kwargs,
-    ):
+        **npx_kwargs: Any,
+    ) -> None:
         """
         Initialize MCP client.
 
@@ -195,7 +194,7 @@ class MCPClient:
 
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         if self._session:
             await self._session.aclose()
@@ -298,6 +297,8 @@ class MCPClient:
 
         try:
             if self._transport == "stdio":
+                if not self._stdio_client:
+                    raise MCPClientError("STDIO client not initialized")
                 info = await self._stdio_client.get_server_info()
                 return MCPServerInfo(
                     protocol_version=info.get("protocol_version"),
@@ -306,6 +307,8 @@ class MCPClient:
                     capabilities=info.get("capabilities", {}),
                 )
             elif self._transport == "sse":
+                if not self._sse_client:
+                    raise MCPClientError("SSE client not initialized")
                 info = await self._sse_client.get_server_info()
                 return MCPServerInfo(
                     protocol_version=info.get("protocol_version"),
@@ -404,8 +407,12 @@ class MCPClient:
 
         try:
             if self._transport == "stdio":
+                if not self._stdio_client:
+                    raise MCPClientError("STDIO client not initialized")
                 tools_data = await self._stdio_client.list_tools()
             elif self._transport == "sse":
+                if not self._sse_client:
+                    raise MCPClientError("SSE client not initialized")
                 tools_data = await self._sse_client.list_tools()
             else:
                 server_url = self.get_server_url()

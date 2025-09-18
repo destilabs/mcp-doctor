@@ -134,6 +134,9 @@ class MCPSSEClient:
                 headers["mcp-protocol-version"] = self._protocol_version
             headers.update(self._custom_headers)
 
+            if not self._session:
+                raise RuntimeError("SSE client session not initialized")
+
             response = await self._session.post(
                 self._messages_url,
                 json=request_data,
@@ -174,6 +177,10 @@ class MCPSSEClient:
 
             while self._running:
                 try:
+                    if not self._session:
+                        logger.error("SSE session not available, stopping listener")
+                        break
+
                     async with self._session.stream(
                         "GET",
                         self.sse_url,

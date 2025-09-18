@@ -119,7 +119,11 @@ def analyze(
 
 
 async def _run_analysis(
-    target: str, check: CheckType, timeout: int, verbose: bool, npx_kwargs: dict = None
+    target: str,
+    check: CheckType,
+    timeout: int,
+    verbose: bool,
+    npx_kwargs: Optional[dict] = None,
 ) -> dict:
     """Run the actual analysis logic."""
 
