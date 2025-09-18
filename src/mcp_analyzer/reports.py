@@ -168,7 +168,7 @@ class ReportFormatter:
             console.print(
                 f"\n[bold green]🎉 Excellent! All tools have agent-friendly descriptions![/bold green]"
             )
-        elif errors == self.config.display.MIN_TOKEN_COUNT:
+        elif not errors:
             console.print(
                 f"\n[bold blue]👍 Good foundation! Address the warnings to make tools even more agent-friendly.[/bold blue]"
             )
