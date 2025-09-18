@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 
 from .checkers.descriptions import DescriptionChecker
+from .checkers.token_efficiency import TokenEfficiencyChecker
 from .mcp_client import MCPClient
 from .npx_launcher import is_npx_command
 from .reports import ReportFormatter
@@ -21,6 +22,7 @@ app = typer.Typer(
 
 class CheckType(str, Enum):
     descriptions = "descriptions"
+    token_efficiency = "token_efficiency"
     all = "all"
 
 
@@ -37,7 +39,7 @@ def analyze(
         help="MCP server URL (e.g., http://localhost:8000/mcp) or NPX command (e.g., 'npx firecrawl-mcp')",
     ),
     check: CheckType = typer.Option(
-        CheckType.descriptions, help="Type of analysis to run"
+        CheckType.descriptions, help="Type of analysis to run: descriptions, token_efficiency, or all"
     ),
     output_format: OutputFormat = typer.Option(
         OutputFormat.table, help="Output format for results"
@@ -163,6 +165,12 @@ async def _run_analysis(
                 description_results = checker.analyze_tool_descriptions(tools)
                 results["checks"]["descriptions"] = description_results
 
+        if check == CheckType.token_efficiency or check == CheckType.all:
+            with console.status("[bold green]Analyzing token efficiency..."):
+                efficiency_checker = TokenEfficiencyChecker()
+                efficiency_results = await efficiency_checker.analyze_token_efficiency(tools, client)
+                results["checks"]["token_efficiency"] = efficiency_results
+
     finally:
 
         await client.close()
@@ -179,6 +187,7 @@ def version() -> None:
     console.print(__description__)
     console.print("\n[bold green]Available Diagnostics:[/bold green]")
     console.print("• 📝 Tool Description Analysis")
+    console.print("• 🔢 Token Efficiency Analysis")
     console.print("• 🔮 Schema Validation (coming soon)")
     console.print("• ⚡ Performance Analysis (coming soon)")
     console.print("• 🔒 Security Audit (coming soon)")

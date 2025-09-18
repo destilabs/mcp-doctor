@@ -522,6 +522,36 @@ class MCPClient:
             logger.error(f"Error fetching tool details for {tool_name}: {e}")
             return None
 
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Call a tool with the given arguments.
+
+        Args:
+            tool_name: Name of the tool to call
+            arguments: Arguments to pass to the tool
+
+        Returns:
+            Tool execution result
+
+        Raises:
+            MCPClientError: If the tool call fails
+        """
+        await self._ensure_server_ready()
+
+        try:
+            if self._stdio_client:
+                # Use STDIO client for NPX servers
+                return await self._stdio_client.call_tool(tool_name, arguments)
+            elif self._sse_client:
+                # Use SSE client for SSE servers
+                return await self._sse_client.call_tool(tool_name, arguments)
+            else:
+                return NotImplementedError("HTTP transport not supported")
+        except Exception as e:
+            if isinstance(e, MCPClientError):
+                raise
+            raise MCPClientError(f"Failed to call tool {tool_name}: {e}")
+
     async def close(self) -> None:
         """Close connections and stop servers."""
         if self._session:

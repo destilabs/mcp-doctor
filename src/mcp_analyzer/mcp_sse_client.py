@@ -261,6 +261,21 @@ class MCPSSEClient:
         tools = response.result.get("tools", []) if response.result else []
         return tools
 
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Call a tool via SSE."""
+        request = MCPMessage(
+            id=self._next_id(),
+            method="tools/call",
+            params={"name": name, "arguments": arguments},
+        )
+
+        response = await self._send_request(request)
+
+        if response.error:
+            raise Exception(f"Failed to call tool {name}: {response.error}")
+
+        return response.result or {}
+
     async def close(self) -> None:
         """Close the SSE connection."""
         self._running = False

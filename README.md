@@ -13,9 +13,9 @@
 
 I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
 
-**Progress:** 1/30 PRs completed
+**Progress:** 2/30 PRs completed
 ```
-[                              ] 3% (1/30)
+[██                            ] 7% (2/30)
 ```
 **Days Remaining:** 30 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
 
@@ -82,6 +82,12 @@ mcp-doctor analyze --target "npx firecrawl-mcp"
 # Diagnose with environment variables
 mcp-doctor analyze --target "export FIRECRAWL_API_KEY=your_key && npx firecrawl-mcp"
 
+# Run token efficiency analysis
+mcp-doctor analyze --target "npx firecrawl-mcp" --check token_efficiency
+
+# Run all available checks
+mcp-doctor analyze --target "npx firecrawl-mcp" --check all
+
 # Get detailed diagnostic output
 mcp-doctor analyze --target http://localhost:8000/mcp --verbose
 ```
@@ -106,6 +112,14 @@ Watch MCP Doctor diagnose an HTTP MCP server:
 - **Parameter Naming** - Checks for descriptive vs generic parameter names
 - **Purpose Clarity** - Validates that each tool's purpose is clearly stated
 - **Jargon Detection** - Identifies technical terms that should be simplified
+
+### 🔢 Token Efficiency Analysis
+- **Response Size Measurement** - Analyzes actual tool response token counts
+- **Pagination Detection** - Identifies tools that need pagination support
+- **Filtering Capabilities** - Checks for response filtering options
+- **Format Control** - Evaluates response format customization
+- **Verbose Identifier Detection** - Flags technical IDs that could be simplified
+- **Performance Metrics** - Measures response times and sizes
 
 ### 🔮 Future Diagnostics (Roadmap)
 - **Schema Validation** - Parameter schema compatibility checks
@@ -234,6 +248,42 @@ NPX Command: export FIRECRAWL_API_KEY=abc123 && npx firecrawl-mcp
    4. Simplify technical jargon in 2 tool descriptions
 ```
 
+### Token Efficiency Analysis Example
+
+```
+🩺 MCP Doctor - Server Diagnosis
+NPX Command: npx firecrawl-mcp
+
+✅ NPX server launched at http://localhost:3001
+✅ Connected! Found 8 tools
+
+🔢 Token Efficiency Analysis
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                       ┃ Value         ┃ Status                    ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Average Response Size        │ 3,250 tokens  │ ✅ Efficient             │
+│ Largest Response             │ 28,500 tokens │ 🚨 Oversized             │
+│ Tools Over 25k Tokens        │ 1             │ 🚨 1                     │
+│ Tools Successfully Analyzed  │ 8/8           │ ✅ Complete              │
+└──────────────────────────────┴───────────────┴───────────────────────────┘
+
+🚨 Token Efficiency Issues Found:
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Tool                         ┃ Severity ┃ Issue                                                                        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ scrape_url                   │ ⚠️       │ Response contains 28,500 tokens (>25,000 recommended)                       │
+│ scrape_url                   │ ℹ️       │ Tool would benefit from filtering capabilities to reduce response size       │
+│ list_crawl_jobs              │ ℹ️       │ Tool likely returns collections but doesn't support pagination              │
+│ get_crawl_status             │ ℹ️       │ Responses contain verbose technical identifiers (UUIDs, hashes)             │
+└──────────────────────────────┴──────────┴──────────────────────────────────────────────────────────────────────────┘
+
+🎯 Token Efficiency Recommendations:
+   1. Implement response size limits for 1 tool with oversized responses (>25k tokens)
+   2. Add pagination support to 1 tool that returns collections
+   3. Add filtering capabilities to 1 tool to reduce response size
+   4. Replace verbose technical identifiers with semantic ones in 1 tool
+```
+
 ## 📋 CLI Reference
 
 ### `analyze` Command
@@ -245,7 +295,7 @@ mcp-doctor analyze [OPTIONS]
 
 **Options:**
 - `--target TEXT` (required): MCP server URL or NPX command to diagnose
-- `--check {descriptions,schemas,performance,all}`: Type of diagnosis to run (default: descriptions)
+- `--check {descriptions,token_efficiency,all}`: Type of diagnosis to run (default: descriptions)
 - `--output-format {table,json,yaml}`: Output format (default: table)
 - `--verbose / --no-verbose`: Show detailed diagnostic output (default: False)
 - `--timeout INTEGER`: Request timeout in seconds (default: 30)
@@ -319,6 +369,14 @@ Please see our contributing guidelines and feel free to open issues or pull requ
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
+
+## 📚 Documentation
+
+For comprehensive documentation, see the [`docs/`](./docs/) directory:
+
+- **[Token Efficiency Arguments](./docs/token-efficiency-arguments.md)** - How MCP Doctor generates test arguments
+- **[Technical Architecture](./docs/token-efficiency-architecture.md)** - Deep dive into implementation details
+- **[Documentation Index](./docs/README.md)** - Complete documentation overview
 
 ## 🔗 Related Projects
 
