@@ -6,6 +6,6 @@ from .token_efficiency import TokenEfficiencyChecker, TokenEfficiencyIssue
 __all__ = [
     "DescriptionChecker",
     "DescriptionIssue",
-    "TokenEfficiencyChecker",
+    "TokenEfficiencyChecker", 
     "TokenEfficiencyIssue",
 ]

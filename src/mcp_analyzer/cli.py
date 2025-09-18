@@ -7,8 +7,7 @@ from typing import Any, Dict, Optional
 import typer
 from rich.console import Console
 
-from .checkers.descriptions import DescriptionChecker
-from .checkers.token_efficiency import TokenEfficiencyChecker
+from .checkers import DescriptionChecker, TokenEfficiencyChecker
 from .mcp_client import MCPClient
 from .npx_launcher import is_npx_command
 from .reports import ReportFormatter
@@ -90,6 +89,7 @@ def analyze(
     else:
         console.print(f"Server URL: [cyan]{target}[/cyan]")
     console.print(f"Check Type: [yellow]{check.value}[/yellow]\n")
+
 
     try:
 
