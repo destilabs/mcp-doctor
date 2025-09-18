@@ -184,40 +184,36 @@ class ReportFormatter:
         if analyzed_tools > 0:
             # Average response size
             avg_status = (
-                "✅ Efficient" if avg_tokens < 5000
-                else "⚠️ Moderate" if avg_tokens < 15000
-                else "🚨 Large"
+                "✅ Efficient"
+                if avg_tokens < 5000
+                else "⚠️ Moderate" if avg_tokens < 15000 else "🚨 Large"
             )
             summary_table.add_row(
-                "Average Response Size",
-                f"{avg_tokens:,.0f} tokens",
-                avg_status
+                "Average Response Size", f"{avg_tokens:,.0f} tokens", avg_status
             )
 
             # Maximum response size
             max_status = (
-                "✅ Good" if max_tokens < 25000
-                else "⚠️ Large" if max_tokens < 50000
-                else "🚨 Oversized"
+                "✅ Good"
+                if max_tokens < 25000
+                else "⚠️ Large" if max_tokens < 50000 else "🚨 Oversized"
             )
             summary_table.add_row(
-                "Largest Response",
-                f"{max_tokens:,} tokens",
-                max_status
+                "Largest Response", f"{max_tokens:,} tokens", max_status
             )
 
             # Tools exceeding limit
-            exceeding_status = "✅ None" if tools_exceeding == 0 else f"🚨 {tools_exceeding}"
+            exceeding_status = (
+                "✅ None" if tools_exceeding == 0 else f"🚨 {tools_exceeding}"
+            )
             summary_table.add_row(
-                "Tools Over 25k Tokens",
-                str(tools_exceeding),
-                exceeding_status
+                "Tools Over 25k Tokens", str(tools_exceeding), exceeding_status
             )
 
             summary_table.add_row(
                 "Tools Successfully Analyzed",
                 f"{analyzed_tools}/{total_tools}",
-                "✅ Complete" if analyzed_tools == total_tools else "⚠️ Partial"
+                "✅ Complete" if analyzed_tools == total_tools else "⚠️ Partial",
             )
 
         console.print(summary_table)
@@ -225,7 +221,7 @@ class ReportFormatter:
         # Tool-specific metrics table (if verbose and we have metrics)
         if verbose and tool_metrics:
             console.print(f"\n[bold cyan]📊 Per-Tool Response Metrics[/bold cyan]")
-            
+
             metrics_table = Table(show_header=True, header_style="bold cyan")
             metrics_table.add_column("Tool Name", style="cyan", min_width=20)
             metrics_table.add_column("Avg Tokens", justify="right", min_width=12)
@@ -234,22 +230,24 @@ class ReportFormatter:
             metrics_table.add_column("Status", justify="center", min_width=12)
 
             for metrics in tool_metrics:
-                valid_measurements = [m for m in metrics.measurements if m.token_count > 0]
+                valid_measurements = [
+                    m for m in metrics.measurements if m.token_count > 0
+                ]
                 scenario_count = len(valid_measurements)
-                
+
                 if scenario_count > 0:
                     status = (
-                        "✅ Efficient" if metrics.max_tokens < 25000
-                        else "⚠️ Large" if metrics.max_tokens < 50000
-                        else "🚨 Oversized"
+                        "✅ Efficient"
+                        if metrics.max_tokens < 25000
+                        else "⚠️ Large" if metrics.max_tokens < 50000 else "🚨 Oversized"
                     )
-                    
+
                     metrics_table.add_row(
                         metrics.tool_name,
                         f"{metrics.avg_tokens:,.0f}",
                         f"{metrics.max_tokens:,}",
                         f"{scenario_count}/3",
-                        status
+                        status,
                     )
 
             console.print(metrics_table)
@@ -262,7 +260,7 @@ class ReportFormatter:
             issues_table.add_column("Tool", style="cyan", min_width=20)
             issues_table.add_column("Severity", justify="center", min_width=8)
             issues_table.add_column("Issue", min_width=40)
-            
+
             if verbose:
                 issues_table.add_column("Scenario", min_width=15)
                 issues_table.add_column("Tokens", justify="right", min_width=10)
@@ -270,22 +268,24 @@ class ReportFormatter:
             # Sort issues by severity and measured tokens
             severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
             sorted_issues = sorted(
-                issues, 
+                issues,
                 key=lambda x: (
-                    severity_order[x.severity], 
+                    severity_order[x.severity],
                     -(x.measured_tokens or 0),
-                    x.tool_name
-                )
+                    x.tool_name,
+                ),
             )
 
             for issue in sorted_issues:
                 severity_icon = self._get_severity_icon(issue.severity)
-                
+
                 row = [issue.tool_name, severity_icon, issue.message]
-                
+
                 if verbose:
                     row.append(issue.scenario or "N/A")
-                    row.append(f"{issue.measured_tokens:,}" if issue.measured_tokens else "N/A")
+                    row.append(
+                        f"{issue.measured_tokens:,}" if issue.measured_tokens else "N/A"
+                    )
 
                 issues_table.add_row(*row)
 
@@ -296,7 +296,9 @@ class ReportFormatter:
                 console.print(f"\n[bold yellow]💡 Detailed Suggestions:[/bold yellow]")
                 for issue in sorted_issues:
                     if issue.suggestion:
-                        console.print(f"   • [cyan]{issue.tool_name}[/cyan]: {issue.suggestion}")
+                        console.print(
+                            f"   • [cyan]{issue.tool_name}[/cyan]: {issue.suggestion}"
+                        )
 
             elif issues:
                 console.print(
@@ -305,7 +307,9 @@ class ReportFormatter:
 
         # Recommendations
         if recommendations:
-            console.print(f"\n[bold yellow]🎯 Token Efficiency Recommendations:[/bold yellow]")
+            console.print(
+                f"\n[bold yellow]🎯 Token Efficiency Recommendations:[/bold yellow]"
+            )
             for i, rec in enumerate(recommendations, 1):
                 console.print(f"   {i}. {rec}")
 

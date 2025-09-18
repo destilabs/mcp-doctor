@@ -39,7 +39,8 @@ def analyze(
         help="MCP server URL (e.g., http://localhost:8000/mcp) or NPX command (e.g., 'npx firecrawl-mcp')",
     ),
     check: CheckType = typer.Option(
-        CheckType.descriptions, help="Type of analysis to run: descriptions, token_efficiency, or all"
+        CheckType.descriptions,
+        help="Type of analysis to run: descriptions, token_efficiency, or all",
     ),
     output_format: OutputFormat = typer.Option(
         OutputFormat.table, help="Output format for results"
@@ -168,7 +169,9 @@ async def _run_analysis(
         if check == CheckType.token_efficiency or check == CheckType.all:
             with console.status("[bold green]Analyzing token efficiency..."):
                 efficiency_checker = TokenEfficiencyChecker()
-                efficiency_results = await efficiency_checker.analyze_token_efficiency(tools, client)
+                efficiency_results = await efficiency_checker.analyze_token_efficiency(
+                    tools, client
+                )
                 results["checks"]["token_efficiency"] = efficiency_results
 
     finally:

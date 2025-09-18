@@ -522,7 +522,9 @@ class MCPClient:
             logger.error(f"Error fetching tool details for {tool_name}: {e}")
             return None
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_tool(
+        self, tool_name: str, arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Call a tool with the given arguments.
 
