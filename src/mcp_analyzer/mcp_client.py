@@ -185,7 +185,7 @@ class MCPClient:
             logger.debug(f"Error getting server info: {e}")
             return "Unable to retrieve server information"
 
-    async def __aenter__(self) -> MCPClient:
+    async def __aenter__(self) -> "MCPClient":
         """Async context manager entry."""
         await self._ensure_server_ready()
 
