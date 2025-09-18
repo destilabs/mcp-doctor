@@ -269,8 +269,6 @@ mcp_temp/
 *token*.env
 *_token
 *-token
-token_*
-token.*
 *.key
 *.pem
 *.p12
