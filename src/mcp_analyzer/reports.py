@@ -1,13 +1,14 @@
 """Report formatting and display utilities."""
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from .checkers.descriptions import Severity
+from .config import report_config
 
 console = Console()
 
@@ -17,6 +18,7 @@ class ReportFormatter:
 
     def __init__(self, output_format: str = "table"):
         self.output_format = output_format
+        self.config = report_config
 
     def display_results(self, results: Dict[str, Any], verbose: bool = False) -> None:
         """Display analysis results in the specified format."""
@@ -81,22 +83,26 @@ class ReportFormatter:
         stats_table.add_column("Count", justify="right")
         stats_table.add_column("Percentage", justify="right")
 
-        if total > 0:
-            stats_table.add_row("✅ Passed", str(passed), f"{(passed/total)*100:.1f}%")
+        if total > self.config.display.MIN_TOKEN_COUNT:
+            stats_table.add_row(
+                "✅ Passed", str(passed), self._format_percentage(passed, total)
+            )
+
+            total_issues = warnings + errors + info_count
             stats_table.add_row(
                 "⚠️  Warnings",
                 str(warnings),
-                f"{(warnings/(warnings+errors+info_count) if (warnings+errors+info_count) > 0 else 0)*100:.1f}%",
+                self._format_percentage(warnings, total_issues),
             )
             stats_table.add_row(
                 "❌ Errors",
                 str(errors),
-                f"{(errors/(warnings+errors+info_count) if (warnings+errors+info_count) > 0 else 0)*100:.1f}%",
+                self._format_percentage(errors, total_issues),
             )
             stats_table.add_row(
                 "ℹ️  Info",
                 str(info_count),
-                f"{(info_count/(warnings+errors+info_count) if (warnings+errors+info_count) > 0 else 0)*100:.1f}%",
+                self._format_percentage(info_count, total_issues),
             )
 
         console.print(stats_table)
@@ -106,17 +112,30 @@ class ReportFormatter:
             console.print(f"\n[bold red]Issues Found:[/bold red]")
 
             issues_table = Table(show_header=True, header_style="bold red")
-            issues_table.add_column("Tool", style="cyan", min_width=20)
-            issues_table.add_column("Severity", justify="center", min_width=8)
-            issues_table.add_column("Issue", min_width=30)
+            issues_table.add_column(
+                "Tool", style="cyan", min_width=self.config.table_widths.TOOL_NAME
+            )
+            issues_table.add_column(
+                "Severity",
+                justify="center",
+                min_width=self.config.table_widths.SEVERITY,
+            )
+            issues_table.add_column(
+                "Issue", min_width=self.config.table_widths.ISSUE_SHORT
+            )
 
             if verbose:
-                issues_table.add_column("Suggestion", min_width=40)
+                issues_table.add_column(
+                    "Suggestion", min_width=self.config.table_widths.SUGGESTION
+                )
 
             # Sort issues by severity
-            severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
             sorted_issues = sorted(
-                issues, key=lambda x: (severity_order[x.severity], x.tool_name)
+                issues,
+                key=lambda x: (
+                    self.config.severity.SEVERITY_ORDER[x.severity],
+                    x.tool_name,
+                ),
             )
 
             for issue in sorted_issues:
@@ -139,7 +158,9 @@ class ReportFormatter:
         # Recommendations
         if recommendations:
             console.print(f"\n[bold yellow]🎯 Top Recommendations:[/bold yellow]")
-            for i, rec in enumerate(recommendations, 1):
+            for i, rec in enumerate(
+                recommendations, self.config.display.RECOMMENDATION_START_INDEX
+            ):
                 console.print(f"   {i}. {rec}")
 
         # Summary message
@@ -147,7 +168,7 @@ class ReportFormatter:
             console.print(
                 f"\n[bold green]🎉 Excellent! All tools have agent-friendly descriptions![/bold green]"
             )
-        elif errors == 0:
+        elif errors == self.config.display.MIN_TOKEN_COUNT:
             console.print(
                 f"\n[bold blue]👍 Good foundation! Address the warnings to make tools even more agent-friendly.[/bold blue]"
             )
@@ -181,33 +202,29 @@ class ReportFormatter:
         summary_table.add_column("Value", justify="right")
         summary_table.add_column("Status", justify="center")
 
-        if analyzed_tools > 0:
+        if analyzed_tools > self.config.display.MIN_TOKEN_COUNT:
             # Average response size
-            avg_status = (
-                "✅ Efficient"
-                if avg_tokens < 5000
-                else "⚠️ Moderate" if avg_tokens < 15000 else "🚨 Large"
-            )
+            avg_status = self._get_token_efficiency_status(avg_tokens, is_average=True)
             summary_table.add_row(
                 "Average Response Size", f"{avg_tokens:,.0f} tokens", avg_status
             )
 
             # Maximum response size
-            max_status = (
-                "✅ Good"
-                if max_tokens < 25000
-                else "⚠️ Large" if max_tokens < 50000 else "🚨 Oversized"
-            )
+            max_status = self._get_token_efficiency_status(max_tokens, is_average=False)
             summary_table.add_row(
                 "Largest Response", f"{max_tokens:,} tokens", max_status
             )
 
             # Tools exceeding limit
             exceeding_status = (
-                "✅ None" if tools_exceeding == 0 else f"🚨 {tools_exceeding}"
+                "✅ None"
+                if tools_exceeding == self.config.display.MIN_TOKEN_COUNT
+                else f"🚨 {tools_exceeding}"
             )
             summary_table.add_row(
-                "Tools Over 25k Tokens", str(tools_exceeding), exceeding_status
+                f"Tools Over {self.config.token_thresholds.LARGE_LIMIT//1000}k Tokens",
+                str(tools_exceeding),
+                exceeding_status,
             )
 
             summary_table.add_row(
@@ -223,23 +240,39 @@ class ReportFormatter:
             console.print(f"\n[bold cyan]📊 Per-Tool Response Metrics[/bold cyan]")
 
             metrics_table = Table(show_header=True, header_style="bold cyan")
-            metrics_table.add_column("Tool Name", style="cyan", min_width=20)
-            metrics_table.add_column("Avg Tokens", justify="right", min_width=12)
-            metrics_table.add_column("Max Tokens", justify="right", min_width=12)
-            metrics_table.add_column("Scenarios", justify="center", min_width=10)
-            metrics_table.add_column("Status", justify="center", min_width=12)
+            metrics_table.add_column(
+                "Tool Name", style="cyan", min_width=self.config.table_widths.TOOL_NAME
+            )
+            metrics_table.add_column(
+                "Avg Tokens",
+                justify="right",
+                min_width=self.config.table_widths.AVG_TOKENS,
+            )
+            metrics_table.add_column(
+                "Max Tokens",
+                justify="right",
+                min_width=self.config.table_widths.MAX_TOKENS,
+            )
+            metrics_table.add_column(
+                "Scenarios",
+                justify="center",
+                min_width=self.config.table_widths.SCENARIOS_COUNT,
+            )
+            metrics_table.add_column(
+                "Status", justify="center", min_width=self.config.table_widths.STATUS
+            )
 
             for metrics in tool_metrics:
                 valid_measurements = [
-                    m for m in metrics.measurements if m.token_count > 0
+                    m
+                    for m in metrics.measurements
+                    if m.token_count > self.config.display.MIN_TOKEN_COUNT
                 ]
                 scenario_count = len(valid_measurements)
 
-                if scenario_count > 0:
-                    status = (
-                        "✅ Efficient"
-                        if metrics.max_tokens < 25000
-                        else "⚠️ Large" if metrics.max_tokens < 50000 else "🚨 Oversized"
+                if scenario_count > self.config.display.MIN_TOKEN_COUNT:
+                    status = self._get_token_efficiency_status(
+                        metrics.max_tokens, is_average=False
                     )
 
                     metrics_table.add_row(
@@ -257,21 +290,32 @@ class ReportFormatter:
             console.print(f"\n[bold red]🚨 Token Efficiency Issues Found:[/bold red]")
 
             issues_table = Table(show_header=True, header_style="bold red")
-            issues_table.add_column("Tool", style="cyan", min_width=20)
-            issues_table.add_column("Severity", justify="center", min_width=8)
-            issues_table.add_column("Issue", min_width=40)
+            issues_table.add_column(
+                "Tool", style="cyan", min_width=self.config.table_widths.TOOL_NAME
+            )
+            issues_table.add_column(
+                "Severity",
+                justify="center",
+                min_width=self.config.table_widths.SEVERITY,
+            )
+            issues_table.add_column(
+                "Issue", min_width=self.config.table_widths.ISSUE_LONG
+            )
 
             if verbose:
-                issues_table.add_column("Scenario", min_width=15)
-                issues_table.add_column("Tokens", justify="right", min_width=10)
+                issues_table.add_column(
+                    "Scenario", min_width=self.config.table_widths.SCENARIO
+                )
+                issues_table.add_column(
+                    "Tokens", justify="right", min_width=self.config.table_widths.TOKENS
+                )
 
             # Sort issues by severity and measured tokens
-            severity_order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
             sorted_issues = sorted(
                 issues,
                 key=lambda x: (
-                    severity_order[x.severity],
-                    -(x.measured_tokens or 0),
+                    self.config.severity.SEVERITY_ORDER[x.severity],
+                    -(x.measured_tokens or self.config.display.MIN_TOKEN_COUNT),
                     x.tool_name,
                 ),
             )
@@ -310,7 +354,9 @@ class ReportFormatter:
             console.print(
                 f"\n[bold yellow]🎯 Token Efficiency Recommendations:[/bold yellow]"
             )
-            for i, rec in enumerate(recommendations, 1):
+            for i, rec in enumerate(
+                recommendations, self.config.display.RECOMMENDATION_START_INDEX
+            ):
                 console.print(f"   {i}. {rec}")
 
         # Summary message
@@ -318,29 +364,54 @@ class ReportFormatter:
             console.print(
                 f"\n[green]✅ All analyzed tools show good token efficiency![/green]"
             )
-        elif tools_exceeding == 0:
+        elif tools_exceeding == self.config.display.MIN_TOKEN_COUNT:
             console.print(
-                f"\n[yellow]⚠️  Found efficiency improvements, but no tools exceed the 25k token limit[/yellow]"
+                f"\n[yellow]⚠️  Found efficiency improvements, but no tools exceed the {self.config.token_thresholds.LARGE_LIMIT//1000}k token limit[/yellow]"
             )
         else:
             console.print(
-                f"\n[red]🚨 {tools_exceeding} tool(s) exceed the recommended 25k token limit[/red]"
+                f"\n[red]🚨 {tools_exceeding} tool(s) exceed the recommended {self.config.token_thresholds.LARGE_LIMIT//1000}k token limit[/red]"
             )
+
+    def _format_percentage(self, numerator: int, denominator: int) -> str:
+        """Format percentage with consistent decimal places."""
+        if denominator == 0:
+            return "0.0%"
+        percentage = (
+            numerator / denominator
+        ) * self.config.display.PERCENTAGE_MULTIPLIER
+        return f"{percentage:.{self.config.display.PERCENTAGE_DECIMAL_PLACES}f}%"
+
+    def _get_token_efficiency_status(
+        self, token_count: int, is_average: bool = False
+    ) -> str:
+        """Get efficiency status based on token count."""
+        if is_average:
+            if token_count < self.config.token_thresholds.EFFICIENT_LIMIT:
+                return "✅ Efficient"
+            elif token_count < self.config.token_thresholds.MODERATE_LIMIT:
+                return "⚠️ Moderate"
+            else:
+                return "🚨 Large"
+        else:
+            if token_count < self.config.token_thresholds.LARGE_LIMIT:
+                return "✅ Good"
+            elif token_count < self.config.token_thresholds.OVERSIZED_LIMIT:
+                return "⚠️ Large"
+            else:
+                return "🚨 Oversized"
 
     def _get_severity_icon(self, severity: Severity) -> str:
         """Get icon for severity level."""
-        icons = {
-            Severity.ERROR: "[red]❌[/red]",
-            Severity.WARNING: "[yellow]⚠️[/yellow]",
-            Severity.INFO: "[blue]ℹ️[/blue]",
-        }
-        return icons.get(severity, "❓")
+        return self.config.severity.SEVERITY_ICONS.get(
+            severity, self.config.severity.DEFAULT_ICON
+        )
 
     def _display_json(self, results: Dict[str, Any]) -> None:
         """Display results as JSON."""
         # Convert dataclasses to dicts for JSON serialization
         json_results = self._convert_for_json(results)
-        console.print(json.dumps(json_results, indent=2))
+        console.print(json.dumps(json_results, indent=self.config.display.JSON_INDENT))
 
     def _display_yaml(self, results: Dict[str, Any]) -> None:
         """Display results as YAML."""
