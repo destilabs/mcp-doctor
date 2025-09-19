@@ -67,7 +67,9 @@ async def fetch_tools_for_dataset(
     is_npx = is_npx_command(target)
 
     status_message = (
-        "[bold green]Launching NPX server..." if is_npx else "[bold green]Connecting to MCP server..."
+        "[bold green]Launching NPX server..."
+        if is_npx
+        else "[bold green]Connecting to MCP server..."
     )
 
     with console.status(status_message):

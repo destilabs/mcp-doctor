@@ -6,15 +6,15 @@ from pathlib import Path
 import pytest
 
 import mcp_analyzer.dataset_generator as dataset_module
-from mcp_analyzer.cli import _load_tools_from_file
 from mcp_analyzer.dataset_generator import (
-    DatasetGenerator,
     DatasetGenerationError,
+    DatasetGenerator,
     ModelProvider,
     OpenAIClient,
     resolve_provider,
 )
 from mcp_analyzer.mcp_client import MCPTool
+from mcp_analyzer.tool_utils import load_tools_from_file
 
 
 class DummyClient:
@@ -64,7 +64,9 @@ async def test_dataset_generator_success(sample_tools: list[MCPTool]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dataset_generator_detects_invalid_tools(sample_tools: list[MCPTool]) -> None:
+async def test_dataset_generator_detects_invalid_tools(
+    sample_tools: list[MCPTool],
+) -> None:
     """Generator should raise when dataset references unknown tools."""
 
     response = json.dumps(
@@ -209,7 +211,9 @@ async def test_dataset_generator_allows_custom_timeout(
         api_key = "key"
         model = "gpt"
 
-    monkeypatch.setattr(dataset_module, "resolve_provider", lambda model=None: FakeProvider)
+    monkeypatch.setattr(
+        dataset_module, "resolve_provider", lambda model=None: FakeProvider
+    )
 
     captured: dict[str, float] = {}
 
@@ -250,7 +254,7 @@ def test_load_tools_from_file(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    tools = _load_tools_from_file(tools_path)
+    tools = load_tools_from_file(tools_path)
 
     assert len(tools) == 2
     assert tools[0].name == "calculate"
@@ -264,4 +268,4 @@ def test_load_tools_from_file_invalid(tmp_path: Path) -> None:
     tools_path.write_text(json.dumps([123]), encoding="utf-8")
 
     with pytest.raises(DatasetGenerationError):
-        _load_tools_from_file(tools_path)
+        load_tools_from_file(tools_path)

@@ -188,7 +188,6 @@ async def _run_analysis(
     return results
 
 
-
 @app.command()
 def generate_dataset(
     target: Optional[str] = typer.Option(
@@ -206,7 +205,9 @@ def generate_dataset(
         None,
         help="Override default model name for the chosen provider",
     ),
-    timeout: int = typer.Option(30, help="Request timeout in seconds when fetching tools"),
+    timeout: int = typer.Option(
+        30, help="Request timeout in seconds when fetching tools"
+    ),
     env_vars: Optional[str] = typer.Option(
         None,
         "--env-vars",

@@ -105,7 +105,9 @@ class AnthropicClient:
             ],
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, base_url=self.base_url) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout, base_url=self.base_url
+        ) as client:
             response = await client.post("/v1/messages", headers=headers, json=payload)
             try:
                 response.raise_for_status()
@@ -119,7 +121,9 @@ class AnthropicClient:
         try:
             content_blocks = data["content"]
         except (KeyError, TypeError) as exc:
-            raise DatasetGenerationError("Unexpected response format from Anthropic API") from exc
+            raise DatasetGenerationError(
+                "Unexpected response format from Anthropic API"
+            ) from exc
 
         text_parts = [
             block.get("text", "")
@@ -127,7 +131,9 @@ class AnthropicClient:
             if isinstance(block, dict) and block.get("type") == "text"
         ]
         if not text_parts:
-            raise DatasetGenerationError("Anthropic response did not contain text content")
+            raise DatasetGenerationError(
+                "Anthropic response did not contain text content"
+            )
         return "\n".join(part.strip() for part in text_parts if part).strip()
 
 
@@ -170,7 +176,9 @@ class OpenAIClient:
         if isinstance(output_text, str) and output_text.strip():
             return output_text.strip()
         if isinstance(output_text, list):
-            joined = "\n".join(part.strip() for part in output_text if isinstance(part, str))
+            joined = "\n".join(
+                part.strip() for part in output_text if isinstance(part, str)
+            )
             if joined.strip():
                 return joined.strip()
 
@@ -184,7 +192,9 @@ class OpenAIClient:
                     if isinstance(content, str):
                         return content.strip()
 
-        raise DatasetGenerationError("OpenAI response did not include usable text content")
+        raise DatasetGenerationError(
+            "OpenAI response did not include usable text content"
+        )
 
     async def complete(self, prompt: str) -> str:
         headers = {
@@ -197,7 +207,9 @@ class OpenAIClient:
             "max_output_tokens": self.max_tokens,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout, base_url=self.base_url) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout, base_url=self.base_url
+        ) as client:
             response = await client.post("/v1/responses", headers=headers, json=payload)
             try:
                 response.raise_for_status()
@@ -277,7 +289,7 @@ class DatasetGenerator:
         tool_block = "\n\n".join(tool_sections)
         instructions = (
             "You are helping generate synthetic training data for MCP tool usage. "
-            "Create a JSON array with exactly {num_tasks} task objects. Each object must contain:"\
+            "Create a JSON array with exactly {num_tasks} task objects. Each object must contain:"
             "\n  - 'prompt': Natural language instructions for an analyst or developer.\n"
             "  - 'tools_called': Array of tool names used in execution order.\n"
             "  - 'tools_args': Array of arrays representing arguments passed to each tool.\n"
@@ -297,10 +309,14 @@ class DatasetGenerator:
         try:
             parsed = json.loads(json_text)
         except json.JSONDecodeError as exc:
-            raise DatasetGenerationError("Failed to parse LLM response as JSON") from exc
+            raise DatasetGenerationError(
+                "Failed to parse LLM response as JSON"
+            ) from exc
 
         if not isinstance(parsed, list):
-            raise DatasetGenerationError("Expected response to be a JSON array of tasks")
+            raise DatasetGenerationError(
+                "Expected response to be a JSON array of tasks"
+            )
         return parsed
 
     def _extract_json(self, text: str) -> str:
@@ -310,7 +326,9 @@ class DatasetGenerator:
             return match.group(1).strip()
         return text.strip()
 
-    def _validate_dataset(self, dataset: Iterable[Dict[str, Any]], tools: Sequence[MCPTool]) -> None:
+    def _validate_dataset(
+        self, dataset: Iterable[Dict[str, Any]], tools: Sequence[MCPTool]
+    ) -> None:
         tool_names = {tool.name for tool in tools}
         for index, item in enumerate(dataset):
             if not isinstance(item, dict):
