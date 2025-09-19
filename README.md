@@ -302,6 +302,28 @@ mcp-doctor analyze [OPTIONS]
 - `--env-vars TEXT`: Environment variables for NPX command (JSON format)
 - `--working-dir TEXT`: Working directory for NPX command
 
+### `generate-dataset` Command
+Create synthetic datasets of MCP tool use cases using Claude or GPT models.
+
+```bash
+# Generate 8 tasks using tools fetched from a running server
+export ANTHROPIC_API_KEY=sk-ant-example
+mcp-doctor generate-dataset --target http://localhost:8000/mcp --num-tasks 8 --llm-timeout 90 --output dataset.json
+
+# Generate 8 tasks using tools from an NPX command
+export OPENAI_API_KEY=sk-open-example
+mcp-doctor generate-dataset --target "npx firecrawl-mcp" --num-tasks 8 --output dataset.json
+
+# Generate tasks from a local JSON definition using OpenAI
+export OPENAI_API_KEY=sk-open-example
+mcp-doctor generate-dataset --tools-file tools.json --num-tasks 5
+```
+
+Set either `ANTHROPIC_API_KEY` (Claude 4 Sonnet) or `OPENAI_API_KEY` (GPT-4.1) before
+running the command. The output is a JSON array containing `prompt`, `tools_called`, and
+`tools_args` entries ready for downstream evaluations. Use `--llm-timeout` to extend the
+wait for slower model responses when needed (defaults to 60 seconds).
+
 ### `version` Command
 Show version and diagnostic capabilities.
 

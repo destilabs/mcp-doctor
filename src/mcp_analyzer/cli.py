@@ -1,16 +1,20 @@
 """Main CLI interface for MCP Analyzer."""
 
 import asyncio
+import json
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import typer
 from rich.console import Console
 
 from .checkers import DescriptionChecker, TokenEfficiencyChecker
+from .dataset_generator import DatasetGenerationError, DatasetGenerator
 from .mcp_client import MCPClient
 from .npx_launcher import is_npx_command
 from .reports import ReportFormatter
+from .tool_utils import fetch_tools_for_dataset, load_tools_from_file
 
 console = Console()
 app = typer.Typer(
@@ -182,6 +186,92 @@ async def _run_analysis(
         await client.close()
 
     return results
+
+
+@app.command()
+def generate_dataset(
+    target: Optional[str] = typer.Option(
+        None,
+        help="MCP server URL or NPX command to pull tool metadata from",
+    ),
+    tools_file: Optional[Path] = typer.Option(
+        None,
+        help="Path to JSON file describing MCP tools (alternative to --target)",
+    ),
+    num_tasks: int = typer.Option(
+        5, min=1, max=20, help="Number of synthetic tasks to generate"
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        help="Override default model name for the chosen provider",
+    ),
+    timeout: int = typer.Option(
+        30, help="Request timeout in seconds when fetching tools"
+    ),
+    env_vars: Optional[str] = typer.Option(
+        None,
+        "--env-vars",
+        help='Environment variables for NPX command (JSON format: \'{"API_KEY": "value"}\')',
+    ),
+    working_dir: Optional[str] = typer.Option(
+        None, "--working-dir", help="Working directory for NPX command"
+    ),
+    no_env_logging: bool = typer.Option(
+        False,
+        "--no-env-logging",
+        help="Disable environment variable logging for security",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        help="Path to save generated dataset as JSON; prints to stdout when omitted",
+    ),
+    llm_timeout: float = typer.Option(
+        60.0,
+        "--llm-timeout",
+        help="Timeout (seconds) for LLM responses when generating datasets",
+    ),
+) -> None:
+    """Generate synthetic datasets for MCP tool use cases."""
+
+    if bool(target) == bool(tools_file):
+        console.print(
+            "[red]❌ Provide exactly one of --target or --tools-file to choose tool sources[/red]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        if target:
+            npx_kwargs: Dict[str, Any] = {}
+            if env_vars:
+                try:
+                    npx_kwargs["env_vars"] = json.loads(env_vars)
+                except json.JSONDecodeError as exc:
+                    raise DatasetGenerationError(f"Invalid JSON in env-vars: {exc}")
+
+            if working_dir:
+                npx_kwargs["working_dir"] = working_dir
+
+            if no_env_logging:
+                npx_kwargs["log_env_vars"] = False
+
+            tools = asyncio.run(fetch_tools_for_dataset(target, timeout, npx_kwargs))
+        else:
+            assert tools_file is not None  # narrow type for mypy
+            tools = load_tools_from_file(tools_file)
+
+        generator = DatasetGenerator(model=model, llm_timeout=llm_timeout)
+        dataset = asyncio.run(generator.generate_dataset(tools, num_tasks=num_tasks))
+
+        if output:
+            output.write_text(json.dumps(dataset, indent=2), encoding="utf-8")
+            console.print(f"✅ Dataset saved to [cyan]{output}[/cyan]")
+        else:
+            console.print_json(data=dataset)
+
+    except DatasetGenerationError as exc:
+        console.print(f"[red]❌ {exc}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
