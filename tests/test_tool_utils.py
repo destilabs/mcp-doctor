@@ -9,7 +9,11 @@ from typing import Any
 import pytest
 
 from mcp_analyzer.mcp_client import MCPTool
-from mcp_analyzer.tool_utils import DatasetGenerationError, fetch_tools_for_dataset, load_tools_from_file
+from mcp_analyzer.tool_utils import (
+    DatasetGenerationError,
+    fetch_tools_for_dataset,
+    load_tools_from_file,
+)
 
 
 class DummyConsole:
@@ -95,7 +99,9 @@ def test_load_tools_from_file_rejects_invalid_payload(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("is_npx", [True, False])
-async def test_fetch_tools_for_dataset_uses_client(monkeypatch: pytest.MonkeyPatch, is_npx: bool) -> None:
+async def test_fetch_tools_for_dataset_uses_client(
+    monkeypatch: pytest.MonkeyPatch, is_npx: bool
+) -> None:
     """Fetcher should proxy through the MCP client and provide feedback."""
 
     from mcp_analyzer import tool_utils as module
@@ -114,9 +120,13 @@ async def test_fetch_tools_for_dataset_uses_client(monkeypatch: pytest.MonkeyPat
     assert len(tools) == 2
 
     if is_npx:
-        assert any("NPX server launched" in message for message in dummy_console.messages)
+        assert any(
+            "NPX server launched" in message for message in dummy_console.messages
+        )
     else:
-        assert any("Connected to MCP server" in message for message in dummy_console.messages)
+        assert any(
+            "Connected to MCP server" in message for message in dummy_console.messages
+        )
 
     assert any(message.startswith("enter:") for message in dummy_console.messages)
 
@@ -124,4 +134,3 @@ async def test_fetch_tools_for_dataset_uses_client(monkeypatch: pytest.MonkeyPat
     assert FakeClient.last_instance.timeout == 15
     assert FakeClient.last_instance.closed is True
     assert FakeClient.last_instance.kwargs.get("env_vars") == {"TOKEN": "abc"}
-

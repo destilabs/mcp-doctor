@@ -43,7 +43,7 @@ jobs:
       uses: codecov/codecov-action@v4
       continue-on-error: true
       with:
-        file: ./coverage.xml
+        files: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
@@ -55,7 +55,7 @@ jobs:
       continue-on-error: true
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        path-to-lcov: coverage.xml
+        file: coverage.xml
         format: cobertura
         fail-on-error: false
 

@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
-import pytest
-
 from mcp_analyzer import cli
-
 
 runner = CliRunner()
 
@@ -74,7 +72,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
     DummyFormatter.created = None
     monkeypatch.setattr(cli, "ReportFormatter", DummyFormatter)
 
-    result = runner.invoke(cli.app, ["analyze", "--target", "http://localhost:8080/mcp"])
+    result = runner.invoke(
+        cli.app, ["analyze", "--target", "http://localhost:8080/mcp"]
+    )
 
     assert result.exit_code == 0
     assert fake_run_analysis.called_with == (
@@ -107,7 +107,9 @@ def test_cli_analyze_invalid_env_vars(monkeypatch) -> None:
     )
 
     assert result.exit_code != 0
-    assert any("Invalid JSON in env-vars" in message for message in dummy_console.messages)
+    assert any(
+        "Invalid JSON in env-vars" in message for message in dummy_console.messages
+    )
 
 
 def test_cli_analyze_handles_npx(monkeypatch) -> None:
@@ -127,7 +129,13 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
 
     fake_run_analysis.received = None
     monkeypatch.setattr(cli, "_run_analysis", fake_run_analysis)
-    monkeypatch.setattr(cli, "ReportFormatter", lambda fmt: type("F", (), {"display_results": lambda self, data, verbose: None})())
+    monkeypatch.setattr(
+        cli,
+        "ReportFormatter",
+        lambda fmt: type(
+            "F", (), {"display_results": lambda self, data, verbose: None}
+        )(),
+    )
 
     result = runner.invoke(
         cli.app,

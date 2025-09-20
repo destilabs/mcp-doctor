@@ -17,13 +17,15 @@ from mcp_analyzer.npx_launcher import (
 def test_get_safe_env_summary_masks_sensitive_keys() -> None:
     """Only non-sensitive keys should be shown explicitly."""
 
-    summary = _get_safe_env_summary({
-        "API_KEY": "secret",
-        "TOKEN": "hidden",
-        "VISIBLE": "ok",
-        "NAME": "demo",
-        "DEBUG": "1",
-    })
+    summary = _get_safe_env_summary(
+        {
+            "API_KEY": "secret",
+            "TOKEN": "hidden",
+            "VISIBLE": "ok",
+            "NAME": "demo",
+            "DEBUG": "1",
+        }
+    )
 
     assert "VISIBLE" in summary
     assert "API_KEY" not in summary
@@ -32,7 +34,9 @@ def test_get_safe_env_summary_masks_sensitive_keys() -> None:
     assert "sensitive" in summary
 
 
-def test_npx_process_command_parsing_and_env_merging(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_npx_process_command_parsing_and_env_merging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Commands with exports should merge prepended env vars with provided ones."""
 
     config = NPXServerConfig(

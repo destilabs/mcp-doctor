@@ -7,13 +7,19 @@ import types
 
 from rich.console import Console
 
-from mcp_analyzer.checkers.descriptions import DescriptionIssue, IssueType as DescriptionIssueType, Severity as DescriptionSeverity
+from mcp_analyzer.checkers.descriptions import (
+    DescriptionIssue,
+)
+from mcp_analyzer.checkers.descriptions import IssueType as DescriptionIssueType
+from mcp_analyzer.checkers.descriptions import Severity as DescriptionSeverity
+from mcp_analyzer.checkers.token_efficiency import IssueType as TokenIssueType
 from mcp_analyzer.checkers.token_efficiency import (
     ResponseMetric,
     ResponseMetrics,
+)
+from mcp_analyzer.checkers.token_efficiency import Severity as TokenSeverity
+from mcp_analyzer.checkers.token_efficiency import (
     TokenEfficiencyIssue,
-    IssueType as TokenIssueType,
-    Severity as TokenSeverity,
 )
 from mcp_analyzer.reports import ReportFormatter
 

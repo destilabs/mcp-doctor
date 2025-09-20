@@ -6,7 +6,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![CI](https://github.com/destilabs/mcp-doctor/workflows/CI/badge.svg)](https://github.com/destilabs/mcp-doctor/actions)
-[![codecov](https://codecov.io/gh/destilabs/mcp-doctor/graph/badge.svg?token=YOUR_CODECOV_TOKEN)](https://codecov.io/gh/destilabs/mcp-doctor)
+[![codecov](https://codecov.io/gh/destilabs/mcp-doctor/graph/badge.svg)](https://codecov.io/gh/destilabs/mcp-doctor)
 [![Coverage Status](https://coveralls.io/repos/github/destilabs/mcp-doctor/badge.svg?branch=main)](https://coveralls.io/github/destilabs/mcp-doctor?branch=main)
 [![GitHub stars](https://img.shields.io/github/stars/destilabs/mcp-doctor?style=social)](https://github.com/destilabs/mcp-doctor/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/destilabs/mcp-doctor)](https://github.com/destilabs/mcp-doctor/issues)
