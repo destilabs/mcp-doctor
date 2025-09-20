@@ -19,6 +19,7 @@ Welcome to the comprehensive documentation for MCP Doctor - the diagnostic tool 
 - **Custom Checkers** - Creating your own diagnostic modules
 - **Performance Optimization** - Tips for faster analysis
 - **Security Considerations** - Safe handling of sensitive data
+- **Code Coverage** - Test coverage measurement and reporting
 
 ### Troubleshooting
 - [Token Efficiency Troubleshooting](./troubleshooting-token-efficiency.md) - Solutions for token efficiency analysis issues

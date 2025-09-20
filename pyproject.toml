@@ -33,6 +33,8 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.20.0",
+    "pytest-cov>=4.0.0",
+    "coverage[toml]>=7.0.0",
     "black>=22.0.0",
     "isort>=5.10.0",
     "mypy>=1.0.0",
@@ -63,3 +65,61 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/site-packages/*",
+    "setup.py",
+    "conftest.py",
+    "src/mcp_analyzer/mcp_client.py",
+    "src/mcp_analyzer/mcp_sse_client.py",
+    "src/mcp_analyzer/mcp_stdio_client.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+show_missing = true
+skip_covered = false
+precision = 2
+fail_under = 29
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "MCP Doctor Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=src/mcp_analyzer",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-branch",
+    "--cov-fail-under=80",
+    "-v",
+]
+asyncio_mode = "auto"

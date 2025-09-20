@@ -47,7 +47,7 @@ class ProviderConfig:
 class LLMClient(Protocol):
     """Protocol for language model clients."""
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str) -> str:  # pragma: no cover
         """Return raw text completion for the given prompt."""
 
 
@@ -88,7 +88,7 @@ class AnthropicClient:
         self.base_url = os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
         self.api_version = os.getenv("ANTHROPIC_API_VERSION", "2023-06-01")
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str) -> str:  # pragma: no cover
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": self.api_version,
@@ -196,7 +196,7 @@ class OpenAIClient:
             "OpenAI response did not include usable text content"
         )
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str) -> str:  # pragma: no cover
         headers = {
             "authorization": f"Bearer {self.api_key}",
             "content-type": "application/json",
