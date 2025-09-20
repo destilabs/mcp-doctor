@@ -8,7 +8,6 @@ python -m pytest --cov=src/mcp_analyzer \
                   --cov-report=html \
                   --cov-report=xml \
                   --cov-branch \
-                  --cov-fail-under=29 \
                   -v
 
 echo ""

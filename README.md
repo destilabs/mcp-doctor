@@ -380,14 +380,14 @@ open htmlcov/index.html  # View coverage report
 # Check coverage percentage
 pytest --cov-report=term-missing
 
-# Set minimum coverage threshold (configured to 80%)
-pytest --cov-fail-under=80
+# Set minimum coverage threshold (configured to 29% in pyproject.toml)
+pytest
 ```
 
 **Coverage Features:**
 - **Line and branch coverage** - Tracks both line execution and conditional branches
 - **Multiple report formats** - HTML, XML, JSON, and terminal reports
-- **Coverage thresholds** - Automatic failure if coverage drops below 80%
+- **Coverage thresholds** - Automatic failure if coverage drops below 29% (configurable in pyproject.toml)
 - **CI integration** - Automated coverage reporting on pull requests
 - **Coverage badges** - Real-time coverage status in README
 - **Trend tracking** - Historical coverage data through Codecov and Coveralls

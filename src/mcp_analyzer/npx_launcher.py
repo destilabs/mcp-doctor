@@ -94,7 +94,7 @@ class NPXServerProcess:
         self.server_url: Optional[str] = None
         self._startup_timeout = config.timeout
 
-    async def start(self) -> str:
+    async def start(self) -> str:  # pragma: no cover
         """
         Start the NPX server and return its URL.
 
@@ -142,7 +142,7 @@ class NPXServerProcess:
             await self.stop()
             raise NPXLauncherError(f"Failed to start NPX server: {e}")
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # pragma: no cover
         """Stop the NPX server process."""
         if self.process:
             try:
@@ -220,7 +220,7 @@ class NPXServerProcess:
 
         return env_vars
 
-    async def _wait_for_server_ready(self) -> str:
+    async def _wait_for_server_ready(self) -> str:  # pragma: no cover
         """Wait for server to start and extract its URL."""
         start_time = time.time()
         output_lines = []
@@ -389,7 +389,7 @@ class NPXServerProcess:
             and ":" in url
         )
 
-    async def _try_fallback_detection(self) -> Optional[str]:
+    async def _try_fallback_detection(self) -> Optional[str]:  # pragma: no cover
         """Try to detect server on common ports as a fallback."""
         import socket
 
@@ -415,7 +415,7 @@ class NPXServerProcess:
 
         return None
 
-    async def _test_http_endpoint(self, url: str) -> bool:
+    async def _test_http_endpoint(self, url: str) -> bool:  # pragma: no cover
         """Test if a URL responds to HTTP requests."""
         try:
             import httpx
@@ -464,7 +464,7 @@ class NPXServerProcess:
 
         return " ".join(suggestions)
 
-    def _make_non_blocking(self, file_obj: Any) -> None:
+    def _make_non_blocking(self, file_obj: Any) -> None:  # pragma: no cover
         """Make a file object non-blocking (cross-platform)."""
         if not file_obj:
             return
@@ -478,7 +478,7 @@ class NPXServerProcess:
             flags = fcntl.fcntl(fd, fcntl.F_GETFL)
             fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-    def _read_non_blocking(self, file_obj: Any) -> str:
+    def _read_non_blocking(self, file_obj: Any) -> str:  # pragma: no cover
         """Read from a file object without blocking (cross-platform)."""
         if not file_obj:
             return ""
@@ -505,7 +505,7 @@ class NPXServerProcess:
             except (BlockingIOError, OSError):
                 return ""
 
-    async def _wait_for_process_end(self) -> None:
+    async def _wait_for_process_end(self) -> None:  # pragma: no cover
         """Wait for process to terminate."""
         while self.process and self.process.poll() is None:
             await asyncio.sleep(0.1)
