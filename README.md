@@ -6,6 +6,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![CI](https://github.com/destilabs/mcp-doctor/workflows/CI/badge.svg)](https://github.com/destilabs/mcp-doctor/actions)
+[![codecov](https://codecov.io/gh/destilabs/mcp-doctor/graph/badge.svg?token=YOUR_CODECOV_TOKEN)](https://codecov.io/gh/destilabs/mcp-doctor)
+[![Coverage Status](https://coveralls.io/repos/github/destilabs/mcp-doctor/badge.svg?branch=main)](https://coveralls.io/github/destilabs/mcp-doctor?branch=main)
 [![GitHub stars](https://img.shields.io/github/stars/destilabs/mcp-doctor?style=social)](https://github.com/destilabs/mcp-doctor/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/destilabs/mcp-doctor)](https://github.com/destilabs/mcp-doctor/issues)
 
@@ -355,9 +357,40 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
-# Run with coverage
-pytest --cov=mcp_analyzer
+# Run tests with coverage (using pytest-cov)
+pytest --cov=src/mcp_analyzer --cov-report=html --cov-report=term
+
+# Or use coverage directly
+coverage run -m pytest
+coverage report -m
+coverage html  # Generate HTML report in htmlcov/
 ```
+
+### Code Coverage
+This project maintains comprehensive test coverage to ensure code quality and reliability:
+
+```bash
+# Run tests with coverage reporting
+pytest
+
+# Generate detailed HTML coverage report
+pytest --cov-report=html
+open htmlcov/index.html  # View coverage report
+
+# Check coverage percentage
+pytest --cov-report=term-missing
+
+# Set minimum coverage threshold (configured to 80%)
+pytest --cov-fail-under=80
+```
+
+**Coverage Features:**
+- **Line and branch coverage** - Tracks both line execution and conditional branches
+- **Multiple report formats** - HTML, XML, JSON, and terminal reports
+- **Coverage thresholds** - Automatic failure if coverage drops below 80%
+- **CI integration** - Automated coverage reporting on pull requests
+- **Coverage badges** - Real-time coverage status in README
+- **Trend tracking** - Historical coverage data through Codecov and Coveralls
 
 ### Code Quality & Linting
 This project uses automated code formatting and linting:

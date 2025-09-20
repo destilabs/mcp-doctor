@@ -7,6 +7,7 @@ Welcome to the comprehensive documentation for MCP Doctor - the diagnostic tool 
 ### Core Concepts
 - [Token Efficiency Arguments](./token-efficiency-arguments.md) - How MCP Doctor automatically generates test arguments for tools
 - [Technical Architecture](./token-efficiency-architecture.md) - Deep dive into implementation details and algorithms
+- [Code Coverage Guide](./code-coverage.md) - Comprehensive coverage setup and best practices
 
 ### Features
 - **Tool Description Analysis** - Static analysis of tool descriptions and parameters
@@ -19,6 +20,7 @@ Welcome to the comprehensive documentation for MCP Doctor - the diagnostic tool 
 - **Custom Checkers** - Creating your own diagnostic modules
 - **Performance Optimization** - Tips for faster analysis
 - **Security Considerations** - Safe handling of sensitive data
+- **Code Coverage** - Test coverage measurement and reporting
 
 ### Troubleshooting
 - [Token Efficiency Troubleshooting](./troubleshooting-token-efficiency.md) - Solutions for token efficiency analysis issues
