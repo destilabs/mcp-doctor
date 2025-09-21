@@ -196,7 +196,7 @@ async def _run_analysis(
 
         if check in {CheckType.security, CheckType.all}:
             with console.status("[bold green]Running security audit..."):
-                security_checker = SecurityChecker(timeout=timeout)
+                security_checker = SecurityChecker(timeout=timeout, verify=False)
                 security_results = await security_checker.analyze(actual_url)
                 results["checks"]["security"] = security_results
 

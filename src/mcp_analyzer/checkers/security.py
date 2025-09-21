@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import re
+import ipaddress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -61,9 +60,11 @@ class SecurityChecker:
         self,
         *,
         timeout: int = 10,
+        verify: bool = True,
         client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     ) -> None:
         self.timeout = timeout
+        self.verify = verify
         self._client_factory = client_factory
 
     async def analyze(self, target: str) -> Dict[str, Any]:
@@ -114,11 +115,10 @@ class SecurityChecker:
         if self._client_factory:
             return self._client_factory()
 
-        # We intentionally disable certificate verification to allow
-        # scanning self-signed development servers.
+        # TLS verification can be configured via the verify parameter
         return httpx.AsyncClient(
             timeout=self.timeout,
-            verify=False,
+            verify=self.verify,
             follow_redirects=True,
         )
 
@@ -191,7 +191,8 @@ class SecurityChecker:
         findings: List[SecurityFinding] = []
         hostname = parsed_url.host or ""
 
-        if hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+        if hostname == "localhost":
+            # Special case for localhost hostname
             findings.append(
                 SecurityFinding(
                     vulnerability_id="MCP-NET-002",
@@ -204,18 +205,60 @@ class SecurityChecker:
                 )
             )
         elif hostname:
-            findings.append(
-                SecurityFinding(
-                    vulnerability_id="MCP-NET-001",
-                    title="External Network Exposure",
-                    description="Server appears accessible from external networks",
-                    level=VulnerabilityLevel.MEDIUM,
-                    category="Network Security",
-                    affected_component=hostname,
-                    evidence=f"Resolved host: {hostname}",
-                    recommendation="Ensure firewall and network ACLs restrict unnecessary access",
+            try:
+                ip = ipaddress.ip_address(hostname)
+                
+                if ip.is_loopback:
+                    findings.append(
+                        SecurityFinding(
+                            vulnerability_id="MCP-NET-002",
+                            title="Local Network Binding",
+                            description="Server is bound to a loopback interface",
+                            level=VulnerabilityLevel.INFO,
+                            category="Network Security",
+                            affected_component=hostname,
+                            recommendation="Limit exposure when promoting to shared environments",
+                        )
+                    )
+                elif ip.is_unspecified:
+                    findings.append(
+                        SecurityFinding(
+                            vulnerability_id="MCP-NET-003",
+                            title="Wildcard Binding",
+                            description="Server is bound to all network interfaces (wildcard binding)",
+                            level=VulnerabilityLevel.MEDIUM,
+                            category="Network Security",
+                            affected_component=hostname,
+                            evidence=f"Wildcard IP address: {hostname}",
+                            recommendation="Bind to specific interfaces to limit network exposure",
+                        )
+                    )
+                else:
+                    findings.append(
+                        SecurityFinding(
+                            vulnerability_id="MCP-NET-001",
+                            title="External Network Exposure",
+                            description="Server appears accessible from external networks",
+                            level=VulnerabilityLevel.MEDIUM,
+                            category="Network Security",
+                            affected_component=hostname,
+                            evidence=f"Resolved host: {hostname}",
+                            recommendation="Ensure firewall and network ACLs restrict unnecessary access",
+                        )
+                    )
+            except ValueError:
+                findings.append(
+                    SecurityFinding(
+                        vulnerability_id="MCP-NET-001",
+                        title="External Network Exposure",
+                        description="Server appears accessible from external networks",
+                        level=VulnerabilityLevel.MEDIUM,
+                        category="Network Security",
+                        affected_component=hostname,
+                        evidence=f"Resolved host: {hostname}",
+                        recommendation="Ensure firewall and network ACLs restrict unnecessary access",
+                    )
                 )
-            )
 
         return findings
 

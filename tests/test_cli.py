@@ -399,8 +399,9 @@ class DummySecurityChecker:
     created_with_timeout: list[int] = []
     calls: list[str] = []
 
-    def __init__(self, timeout: int = 0) -> None:
+    def __init__(self, timeout: int = 0, verify: bool = True, **kwargs) -> None:
         self.timeout = timeout
+        self.verify = verify
         DummySecurityChecker.created_with_timeout.append(timeout)
 
     async def analyze(self, target: str):
@@ -427,7 +428,7 @@ def patch_analysis_dependencies(monkeypatch, *, is_npx: bool) -> None:
     monkeypatch.setattr(cli, "DescriptionChecker", lambda: DummyDescriptionChecker())
     monkeypatch.setattr(cli, "TokenEfficiencyChecker", lambda: DummyTokenChecker())
     monkeypatch.setattr(
-        cli, "SecurityChecker", lambda timeout=0: DummySecurityChecker(timeout)
+        cli, "SecurityChecker", lambda **kwargs: DummySecurityChecker(**kwargs)
     )
 
 
