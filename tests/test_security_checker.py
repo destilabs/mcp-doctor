@@ -10,7 +10,9 @@ import pytest
 from mcp_analyzer.checkers.security import SecurityChecker, VulnerabilityLevel
 
 
-def build_mock_client(transport: httpx.MockTransport) -> Callable[[], httpx.AsyncClient]:
+def build_mock_client(
+    transport: httpx.MockTransport,
+) -> Callable[[], httpx.AsyncClient]:
     """Create a factory that returns an AsyncClient with supplied transport."""
 
     def factory() -> httpx.AsyncClient:

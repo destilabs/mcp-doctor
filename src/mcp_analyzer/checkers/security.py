@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
-import json
-import re
+
 import httpx
 
 
@@ -215,67 +216,6 @@ class SecurityChecker:
                     recommendation="Ensure firewall and network ACLs restrict unnecessary access",
                 )
             )
-
-        return findings
-
-    def _analyze_tool_metadata(self, tools: List[Any]) -> List[SecurityFinding]:
-        findings: List[SecurityFinding] = []
-
-        capability_severity = {
-            "Code Execution": VulnerabilityLevel.CRITICAL,
-            "Administrative Access": VulnerabilityLevel.CRITICAL,
-            "File System Access": VulnerabilityLevel.HIGH,
-            "Database Access": VulnerabilityLevel.HIGH,
-            "Network Access": VulnerabilityLevel.MEDIUM,
-            "Communication": VulnerabilityLevel.MEDIUM,
-        }
-
-        capability_recommendations = {
-            "Code Execution": "Require explicit user approval, sandbox commands, and log all executions",
-            "Administrative Access": "Restrict administrative tools to trusted operators and enforce authentication",
-            "File System Access": "Limit file operations to allow-listed paths and sanitize inputs",
-            "Database Access": "Use parameterized queries and enforce least-privilege credentials",
-            "Network Access": "Validate outbound URLs and restrict destinations to trusted domains",
-            "Communication": "Throttle usage and audit message content to prevent abuse",
-        }
-
-        for tool in tools:
-            name = getattr(tool, "name", "") or "unknown_tool"
-            description = getattr(tool, "description", "") or ""
-            schema = getattr(tool, "input_schema", None) or getattr(
-                tool, "parameters", None
-            )
-
-            schema_text = ""
-            if schema is not None:
-                try:
-                    schema_text = json.dumps(schema, default=str)
-                except TypeError:
-                    schema_text = str(schema)
-
-            combined_text = " ".join(filter(None, [name, description, schema_text]))
-
-            matched_capability: Optional[str] = None
-            for pattern, capability in self._DANGEROUS_CAPABILITIES:
-                if re.search(pattern, combined_text, re.IGNORECASE):
-                    matched_capability = capability
-                    break
-
-            if matched_capability:
-                severity = capability_severity[matched_capability]
-                recommendation = capability_recommendations[matched_capability]
-                findings.append(
-                    SecurityFinding(
-                        vulnerability_id="MCP-TOOL-001",
-                        title=f"High-Risk Capability: {matched_capability}",
-                        description=f"Tool '{name}' exposes {matched_capability.lower()} functionality",
-                        level=severity,
-                        category="Tool Capabilities",
-                        affected_component=name,
-                        evidence=description or "Capability inferred from tool metadata",
-                        recommendation=recommendation,
-                    )
-                )
 
         return findings
 

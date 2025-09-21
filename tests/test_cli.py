@@ -413,7 +413,6 @@ class DummySecurityChecker:
         }
 
 
-
 def build_dummy_console(monkeypatch) -> DummyConsole:
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)

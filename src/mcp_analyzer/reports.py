@@ -376,9 +376,7 @@ class ReportFormatter:
                 f"\n[red]🚨 {tools_exceeding} tool(s) exceed the recommended {self.config.token_thresholds.LARGE_LIMIT//1000}k token limit[/red]"
             )
 
-    def _display_security_results(
-        self, results: Dict[str, Any], verbose: bool
-    ) -> None:
+    def _display_security_results(self, results: Dict[str, Any], verbose: bool) -> None:
         """Render the security checker output."""
 
         console.print(f"\n[bold green]🔒 Security Audit[/bold green]")
