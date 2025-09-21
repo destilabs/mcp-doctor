@@ -12,6 +12,7 @@ from mcp_analyzer.checkers.descriptions import (
 )
 from mcp_analyzer.checkers.descriptions import IssueType as DescriptionIssueType
 from mcp_analyzer.checkers.descriptions import Severity as DescriptionSeverity
+from mcp_analyzer.checkers.security import VulnerabilityLevel
 from mcp_analyzer.checkers.token_efficiency import IssueType as TokenIssueType
 from mcp_analyzer.checkers.token_efficiency import (
     ResponseMetric,
@@ -60,6 +61,20 @@ def build_sample_results() -> dict:
         measured_tokens=30000,
     )
 
+    security_summary = {level.value: 0 for level in VulnerabilityLevel}
+    security_summary[VulnerabilityLevel.HIGH.value] = 1
+    security_findings = [
+        {
+            "vulnerability_id": "MCP-AUTH-001",
+            "title": "Missing Authentication",
+            "description": "Server lacks authentication",
+            "level": VulnerabilityLevel.HIGH.value,
+            "category": "Authentication",
+            "affected_component": "http://localhost:8000/mcp",
+            "recommendation": "Add OAuth",
+        }
+    ]
+
     return {
         "server_url": "http://localhost:8000/mcp",
         "tools_count": 2,
@@ -90,6 +105,12 @@ def build_sample_results() -> dict:
                 },
                 "recommendations": ["Paginate heavy listings"],
             },
+            "security": {
+                "summary": security_summary,
+                "statistics": {"total_findings": 1, **security_summary},
+                "findings": security_findings,
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
         },
     }
 
@@ -110,6 +131,7 @@ def test_report_formatter_table_includes_sections(monkeypatch) -> None:
     assert "MCP Server Analysis Report" in output
     assert "AI-Readable Description Analysis" in output
     assert "Token Efficiency Analysis" in output
+    assert "Security Audit" in output
     assert "Paginate heavy listings" in output
 
 
@@ -126,6 +148,7 @@ def test_report_formatter_json_and_yaml_output(monkeypatch) -> None:
 
     json_output = recording_console_json.export_text()
     assert '"server_url"' in json_output
+    assert '"security"' in json_output
 
     fake_yaml = types.ModuleType("yaml")
 

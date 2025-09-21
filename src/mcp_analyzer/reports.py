@@ -8,6 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .checkers.descriptions import Severity
+from .checkers.security import VulnerabilityLevel
 from .config import report_config
 
 console = Console()
@@ -54,6 +55,8 @@ class ReportFormatter:
                 self._display_description_results(check_results, verbose)
             elif check_type == "token_efficiency":
                 self._display_token_efficiency_results(check_results, verbose)
+            elif check_type == "security":
+                self._display_security_results(check_results, verbose)
             else:
                 # For future check types
                 console.print(f"\n[yellow]ℹ️  {check_type.title()} Analysis:[/yellow]")
@@ -373,6 +376,78 @@ class ReportFormatter:
                 f"\n[red]🚨 {tools_exceeding} tool(s) exceed the recommended {self.config.token_thresholds.LARGE_LIMIT//1000}k token limit[/red]"
             )
 
+    def _display_security_results(
+        self, results: Dict[str, Any], verbose: bool
+    ) -> None:
+        """Render the security checker output."""
+
+        console.print(f"\n[bold green]🔒 Security Audit[/bold green]")
+
+        summary = results.get("summary", {})
+        statistics = results.get("statistics", {})
+        findings: List[Dict[str, Any]] = results.get("findings", [])
+        timestamp = results.get("timestamp", "")
+        summary_table = Table(show_header=True, header_style="bold magenta")
+        summary_table.add_column("Metric", style="cyan")
+        summary_table.add_column("Value", justify="right")
+
+        for level in VulnerabilityLevel:
+            summary_table.add_row(
+                f"{self._security_level_icon(level)} {level.value}",
+                str(summary.get(level.value, 0)),
+            )
+
+        summary_table.add_row(
+            "Total Findings", str(statistics.get("total_findings", 0))
+        )
+        if timestamp:
+            summary_table.add_row("Timestamp", timestamp)
+
+        console.print(summary_table)
+
+        if not findings:
+            console.print("\n[bold green]✅ No security issues detected.[/bold green]")
+            return
+
+        console.print(f"\n[bold yellow]🚩 Findings:[/bold yellow]")
+
+        table = Table(show_header=True, header_style="bold yellow")
+        table.add_column("ID", style="cyan", no_wrap=True)
+        table.add_column("Severity", style="magenta", justify="center")
+        table.add_column("Title", style="white")
+        table.add_column("Component", style="cyan")
+
+        if verbose:
+            table.add_column("Details", style="white")
+            table.add_column("Recommendation", style="green")
+
+        for finding in findings:
+            severity = finding.get("level", VulnerabilityLevel.INFO.value)
+            severity_icon = self._security_severity_icon(severity)
+            row = [
+                finding.get("vulnerability_id", "-"),
+                severity_icon,
+                finding.get("title", ""),
+                finding.get("affected_component", ""),
+            ]
+
+            if verbose:
+                description = finding.get("description", "")
+                evidence = finding.get("evidence")
+                if evidence:
+                    description = f"{description}\n[dim]Evidence:[/dim] {evidence}"
+                recommendation = finding.get("recommendation") or "-"
+                row.extend([description, recommendation])
+
+            table.add_row(*row)
+
+        console.print(table)
+
+        if not verbose:
+            console.print(
+                "\n[dim]💡 Use --verbose for evidence and remediation details.[/dim]"
+            )
+
     def _format_percentage(self, numerator: int, denominator: int) -> str:
         """Format percentage with consistent decimal places."""
         if denominator == 0:
@@ -406,6 +481,23 @@ class ReportFormatter:
         return self.config.severity.SEVERITY_ICONS.get(
             severity, self.config.severity.DEFAULT_ICON
         )
+
+    def _security_level_icon(self, level: VulnerabilityLevel) -> str:
+        icons = {
+            VulnerabilityLevel.CRITICAL: "🔥",
+            VulnerabilityLevel.HIGH: "⚠️",
+            VulnerabilityLevel.MEDIUM: "🔶",
+            VulnerabilityLevel.LOW: "🔹",
+            VulnerabilityLevel.INFO: "ℹ️",
+        }
+        return icons.get(level, "ℹ️")
+
+    def _security_severity_icon(self, severity: str) -> str:
+        try:
+            level = VulnerabilityLevel(severity)
+        except ValueError:
+            level = VulnerabilityLevel.INFO
+        return f"{self._security_level_icon(level)} {level.value}"
 
     def _display_json(self, results: Dict[str, Any]) -> None:
         """Display results as JSON."""

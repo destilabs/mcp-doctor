@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mcp_analyzer import cli
+from mcp_analyzer.checkers.security import VulnerabilityLevel
 
 runner = CliRunner()
 
@@ -48,7 +49,13 @@ def test_cli_analyze_success(monkeypatch) -> None:
     monkeypatch.setattr(cli, "is_npx_command", lambda value: False)
 
     async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
-        fake_run_analysis.called_with = (target, check, timeout, verbose, npx_kwargs)
+        fake_run_analysis.called_with = (
+            target,
+            check,
+            timeout,
+            verbose,
+            npx_kwargs,
+        )
         return {
             "server_url": target,
             "tools_count": 0,
@@ -120,7 +127,13 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     monkeypatch.setattr(cli, "is_npx_command", lambda value: True)
 
     async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
-        fake_run_analysis.received = (target, check, timeout, verbose, npx_kwargs)
+        fake_run_analysis.received = (
+            target,
+            check,
+            timeout,
+            verbose,
+            npx_kwargs,
+        )
         return {
             "server_url": "http://localhost:9999",
             "tools_count": 1,
@@ -380,6 +393,27 @@ class DummyTokenChecker:
 DummyTokenChecker.last_client = None
 
 
+class DummySecurityChecker:
+    """Collects invocation details for the security audit."""
+
+    created_with_timeout: list[int] = []
+    calls: list[str] = []
+
+    def __init__(self, timeout: int = 0) -> None:
+        self.timeout = timeout
+        DummySecurityChecker.created_with_timeout.append(timeout)
+
+    async def analyze(self, target: str):
+        DummySecurityChecker.calls.append(target)
+        return {
+            "summary": {level.value: 0 for level in VulnerabilityLevel},
+            "statistics": {"total_findings": 0},
+            "findings": [],
+            "timestamp": "now",
+        }
+
+
+
 def build_dummy_console(monkeypatch) -> DummyConsole:
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
@@ -387,10 +421,15 @@ def build_dummy_console(monkeypatch) -> DummyConsole:
 
 
 def patch_analysis_dependencies(monkeypatch, *, is_npx: bool) -> None:
+    DummySecurityChecker.created_with_timeout = []
+    DummySecurityChecker.calls = []
     monkeypatch.setattr(cli, "MCPClient", FakeClient)
     monkeypatch.setattr(cli, "is_npx_command", lambda target: is_npx)
     monkeypatch.setattr(cli, "DescriptionChecker", lambda: DummyDescriptionChecker())
     monkeypatch.setattr(cli, "TokenEfficiencyChecker", lambda: DummyTokenChecker())
+    monkeypatch.setattr(
+        cli, "SecurityChecker", lambda timeout=0: DummySecurityChecker(timeout)
+    )
 
 
 @pytest.mark.asyncio
@@ -407,11 +446,17 @@ async def test_run_analysis_for_npx_target(monkeypatch) -> None:
     )
 
     assert result["is_npx_server"] is True
-    assert result["checks"].keys() == {"descriptions", "token_efficiency"}
+    assert result["checks"].keys() == {
+        "descriptions",
+        "token_efficiency",
+        "security",
+    }
     assert any("NPX server launched" in message for message in dummy_console.messages)
     assert DummyTokenChecker.last_client is not None
     assert FakeClient.last_instance is not None
     assert FakeClient.last_instance.closed is True
+    assert DummySecurityChecker.created_with_timeout == [10]
+    assert DummySecurityChecker.calls == ["http://localhost:9999"]
 
 
 @pytest.mark.asyncio
@@ -429,6 +474,8 @@ async def test_run_analysis_for_http_target(monkeypatch) -> None:
 
     assert result["is_npx_server"] is False
     assert "token_efficiency" not in result["checks"]
+    assert "security" not in result["checks"]
     assert any("Connected!" in message for message in dummy_console.messages)
     assert FakeClient.last_instance is not None
     assert FakeClient.last_instance.closed is True
+    assert DummySecurityChecker.calls == []
