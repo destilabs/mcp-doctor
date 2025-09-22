@@ -73,27 +73,6 @@ class SecurityChecker:
         normalized_target, parsed_target = self._normalize_target(target)
         findings: List[SecurityFinding] = []
 
-        is_http_target = parsed_target.scheme in {"http", "https"}
-
-        if is_http_target:
-            async with self._build_client() as session:
-                findings.extend(
-                    await self._check_authentication(session, normalized_target)
-                )
-        else:
-            # Non-HTTP transports (e.g., stdio) cannot be probed via HTTP checks
-            findings.append(
-                SecurityFinding(
-                    vulnerability_id="MCP-NET-000",
-                    title="Network Scan Skipped",
-                    description="Security scan cannot perform HTTP checks for non-HTTP transports",
-                    level=VulnerabilityLevel.INFO,
-                    category="Network Security",
-                    affected_component=str(parsed_target),
-                    recommendation="Run the server with an HTTP endpoint to enable network probing",
-                )
-            )
-
         findings.extend(self._check_network_exposure(parsed_target))
 
         summary = self._summarize(findings)
@@ -131,60 +110,6 @@ class SecurityChecker:
             parsed = urlparse(f"http://{target}")
         normalized = urlunparse(parsed)
         return normalized, httpx.URL(normalized)
-
-    async def _check_authentication(
-        self, session: httpx.AsyncClient, target: str
-    ) -> List[SecurityFinding]:
-        findings: List[SecurityFinding] = []
-        try:
-            async with session.stream("GET", target, timeout=self.timeout) as response:
-                headers = response.headers
-
-                has_auth = headers.get("Authorization") is not None
-                has_challenge = "www-authenticate" in headers
-
-                if not has_auth and not has_challenge:
-                    findings.append(
-                        SecurityFinding(
-                            vulnerability_id="MCP-AUTH-001",
-                            title="Missing Authentication",
-                            description="MCP server response did not advertise any authentication requirements",
-                            level=VulnerabilityLevel.CRITICAL,
-                            category="Authentication",
-                            affected_component=target,
-                            evidence="No Authorization or WWW-Authenticate headers detected",
-                            recommendation="Require API keys, OAuth tokens, or delegated authentication",
-                        )
-                    )
-
-                auth_header = headers.get("Authorization", "")
-                if auth_header.lower().startswith("basic"):
-                    findings.append(
-                        SecurityFinding(
-                            vulnerability_id="MCP-AUTH-002",
-                            title="Weak Authentication Method",
-                            description="Server advertises Basic authentication which is vulnerable to credential interception",
-                            level=VulnerabilityLevel.HIGH,
-                            category="Authentication",
-                            affected_component=target,
-                            evidence=f"Basic auth header snippet: {auth_header[:32]}...",
-                            recommendation="Switch to bearer tokens or short-lived OAuth credentials",
-                        )
-                    )
-
-        except (httpx.RequestError, httpx.TimeoutException) as exc:
-            findings.append(
-                SecurityFinding(
-                    vulnerability_id="MCP-CONN-001",
-                    title="Connection Error",
-                    description=f"Unable to reach MCP target: {exc!s}",
-                    level=VulnerabilityLevel.INFO,
-                    category="Connectivity",
-                    affected_component=target,
-                )
-            )
-
-        return findings
 
     @staticmethod
     def _check_network_exposure(parsed_url: httpx.URL) -> List[SecurityFinding]:
