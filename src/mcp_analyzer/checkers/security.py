@@ -132,7 +132,7 @@ class SecurityChecker:
         elif hostname:
             try:
                 ip = ipaddress.ip_address(hostname)
-                
+
                 if ip.is_loopback:
                     findings.append(
                         SecurityFinding(

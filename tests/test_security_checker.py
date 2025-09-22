@@ -35,7 +35,7 @@ def test_security_checker_verify_parameter_explicit() -> None:
     """SecurityChecker should accept explicit verify parameter."""
     checker_secure = SecurityChecker(verify=True)
     assert checker_secure.verify is True
-    
+
     checker_insecure = SecurityChecker(verify=False)
     assert checker_insecure.verify is False
 
@@ -46,12 +46,12 @@ def test_security_checker_build_client_uses_verify() -> None:
     client_secure = checker_secure._build_client()
     # Check that the client was created (we can't easily inspect the verify setting)
     assert client_secure is not None
-    assert hasattr(client_secure, 'get')  # Basic httpx.AsyncClient check
-    
+    assert hasattr(client_secure, "get")  # Basic httpx.AsyncClient check
+
     checker_insecure = SecurityChecker(verify=False)
     client_insecure = checker_insecure._build_client()
     assert client_insecure is not None
-    assert hasattr(client_insecure, 'get')  # Basic httpx.AsyncClient check
+    assert hasattr(client_insecure, "get")  # Basic httpx.AsyncClient check
 
 
 def test_check_network_exposure_localhost_hostname() -> None:
@@ -59,7 +59,7 @@ def test_check_network_exposure_localhost_hostname() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://localhost:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-002"
@@ -73,7 +73,7 @@ def test_check_network_exposure_loopback_ipv4() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://127.0.0.1:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-002"
@@ -87,7 +87,7 @@ def test_check_network_exposure_loopback_ipv6() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://[::1]:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-002"
@@ -101,7 +101,7 @@ def test_check_network_exposure_wildcard_ipv4() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://0.0.0.0:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-003"
@@ -116,7 +116,7 @@ def test_check_network_exposure_wildcard_ipv6() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://[::]:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-003"
@@ -131,7 +131,7 @@ def test_check_network_exposure_external_hostname() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://example.com:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-001"
@@ -146,7 +146,7 @@ def test_check_network_exposure_external_ipv4() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://8.8.8.8:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-001"
@@ -160,11 +160,11 @@ def test_check_network_exposure_private_ipv4() -> None:
     """Should treat private IPv4 addresses as external."""
     checker = SecurityChecker()
     test_ips = ["192.168.1.1", "10.0.0.1", "172.16.0.1"]
-    
+
     for ip in test_ips:
         parsed_url = httpx.URL(f"http://{ip}:8080/path")
         findings = checker._check_network_exposure(parsed_url)
-        
+
         assert len(findings) == 1
         finding = findings[0]
         assert finding.vulnerability_id == "MCP-NET-001"
@@ -179,7 +179,7 @@ def test_check_network_exposure_no_host() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("file:///path/to/file")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     # Should not crash and return empty findings
     assert isinstance(findings, list)
     assert len(findings) == 0
@@ -191,7 +191,7 @@ def test_check_network_exposure_empty_host() -> None:
     # Create a URL with empty host (edge case)
     parsed_url = httpx.URL("http://")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     # Should not crash and return empty findings
     assert isinstance(findings, list)
     assert len(findings) == 0
@@ -202,7 +202,7 @@ def test_check_network_exposure_hostname_with_numbers() -> None:
     checker = SecurityChecker()
     parsed_url = httpx.URL("http://server123.example.com:8080/path")
     findings = checker._check_network_exposure(parsed_url)
-    
+
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-001"
