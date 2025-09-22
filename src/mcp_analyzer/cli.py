@@ -9,7 +9,11 @@ from typing import Any, Dict, Optional
 import typer
 from rich.console import Console
 
-from .checkers import DescriptionChecker, TokenEfficiencyChecker
+from .checkers import (
+    DescriptionChecker,
+    SecurityChecker,
+    TokenEfficiencyChecker,
+)
 from .dataset_generator import DatasetGenerationError, DatasetGenerator
 from .mcp_client import MCPClient
 from .npx_launcher import is_npx_command
@@ -26,6 +30,7 @@ app = typer.Typer(
 class CheckType(str, Enum):
     descriptions = "descriptions"
     token_efficiency = "token_efficiency"
+    security = "security"
     all = "all"
 
 
@@ -43,7 +48,7 @@ def analyze(
     ),
     check: CheckType = typer.Option(
         CheckType.descriptions,
-        help="Type of analysis to run: descriptions, token_efficiency, or all",
+        help="Type of analysis to run: descriptions, token_efficiency, security, or all",
     ),
     output_format: OutputFormat = typer.Option(
         OutputFormat.table, help="Output format for results"
@@ -112,7 +117,15 @@ def analyze(
         if no_env_logging:
             npx_kwargs["log_env_vars"] = False
 
-        result = asyncio.run(_run_analysis(target, check, timeout, verbose, npx_kwargs))
+        result = asyncio.run(
+            _run_analysis(
+                target,
+                check,
+                timeout,
+                verbose,
+                npx_kwargs,
+            )
+        )
 
         formatter = ReportFormatter(output_format.value)
         formatter.display_results(result, verbose)
@@ -167,19 +180,25 @@ async def _run_analysis(
 
     try:
 
-        if check == CheckType.descriptions or check == CheckType.all:
+        if check in {CheckType.descriptions, CheckType.all}:
             with console.status("[bold green]Analyzing tool descriptions..."):
                 checker = DescriptionChecker()
                 description_results = checker.analyze_tool_descriptions(tools)
                 results["checks"]["descriptions"] = description_results
 
-        if check == CheckType.token_efficiency or check == CheckType.all:
+        if check in {CheckType.token_efficiency, CheckType.all}:
             with console.status("[bold green]Analyzing token efficiency..."):
                 efficiency_checker = TokenEfficiencyChecker()
                 efficiency_results = await efficiency_checker.analyze_token_efficiency(
                     tools, client
                 )
                 results["checks"]["token_efficiency"] = efficiency_results
+
+        if check in {CheckType.security, CheckType.all}:
+            with console.status("[bold green]Running security audit..."):
+                security_checker = SecurityChecker(timeout=timeout, verify=False)
+                security_results = await security_checker.analyze(actual_url)
+                results["checks"]["security"] = security_results
 
     finally:
 

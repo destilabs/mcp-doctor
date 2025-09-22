@@ -15,11 +15,11 @@
 
 I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
 
-**Progress:** 4/30 PRs completed
+**Progress:** 5/30 PRs completed
 ```
-[████                          ] 13% (4/30)
+[████▌                         ] 17% (5/30)
 ```
-**Days Remaining:** 26 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
+**Days Remaining:** 25 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
 
 ---
 
@@ -35,6 +35,7 @@ MCP Doctor performs comprehensive health checks on your MCP servers, whether the
 - 🌐 **Universal Support** - Works with HTTP servers and NPX-launched packages
 - 🔧 **Environment Handling** - Secure API key and environment variable management
 - 📊 **Rich Reports** - Beautiful terminal output with detailed diagnostics
+- 🔒 **Security Audit** - Detects authentication gaps, exposed credentials, and insecure configurations
 - 🚀 **Easy Integration** - Simple CLI and Python API
 - ⚡ **Fast Execution** - Async operations for quick analysis
 
@@ -90,6 +91,12 @@ mcp-doctor analyze --target "npx firecrawl-mcp" --check token_efficiency
 # Run all available checks
 mcp-doctor analyze --target "npx firecrawl-mcp" --check all
 
+# Run the security audit
+mcp-doctor analyze --target http://localhost:8000/mcp --check security
+
+# Inspect an NPX-launched server for risky tools
+mcp-doctor analyze --target "npx firecrawl-mcp" --check security
+
 # Get detailed diagnostic output
 mcp-doctor analyze --target http://localhost:8000/mcp --verbose
 ```
@@ -126,7 +133,6 @@ Watch MCP Doctor diagnose an HTTP MCP server:
 ### 🔮 Future Diagnostics (Roadmap)
 - **Schema Validation** - Parameter schema compatibility checks
 - **Performance Analysis** - Response time and resource usage evaluation
-- **Security Audit** - Authentication and authorization best practices
 - **Integration Testing** - Agent interaction simulation
 
 ## 🌐 Server Support
