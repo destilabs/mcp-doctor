@@ -308,6 +308,106 @@ def test_cli_generate_dataset_invalid_env(monkeypatch) -> None:
     assert any("Invalid JSON" in message for message in dummy_console.messages)
 
 
+def test_cli_generate_dataset_langsmith_requires_api_key(monkeypatch, tmp_path) -> None:
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    tools_file = tmp_path / "tools.json"
+    tools_file.write_text('["demo-tool"]', encoding="utf-8")
+
+    class StubGenerator:
+        async def generate_dataset(self, tools, *, num_tasks: int) -> list[dict]:
+            return [{"prompt": "demo", "tools_called": ["demo"], "tools_args": [["a"]]}]
+
+        def __init__(self, *, model=None, llm_timeout=60.0) -> None:
+            pass
+
+    monkeypatch.setattr(cli, "DatasetGenerator", StubGenerator)
+
+    def _unexpected_upload(*args, **kwargs):
+        raise RuntimeError("should not upload")
+
+    monkeypatch.setattr(cli, "upload_dataset_to_langsmith", _unexpected_upload)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "generate-dataset",
+            "--tools-file",
+            str(tools_file),
+            "--push-to-langsmith",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert any(
+        "Provide a LangSmith API key" in message for message in dummy_console.messages
+    )
+
+
+def test_cli_generate_dataset_langsmith_upload(monkeypatch, tmp_path) -> None:
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    tools_file = tmp_path / "tools.json"
+    tools_file.write_text('["demo-tool"]', encoding="utf-8")
+
+    class StubGenerator:
+        def __init__(self, *, model=None, llm_timeout=60.0) -> None:
+            pass
+
+        async def generate_dataset(self, tools, *, num_tasks: int) -> list[dict]:
+            return [
+                {
+                    "prompt": "demo",
+                    "tools_called": ["demo"],
+                    "tools_args": [["a"]],
+                }
+            ]
+
+    def fake_upload(dataset, dataset_name, **kwargs):
+        fake_upload.called_with = (dataset, dataset_name, kwargs)
+        return "dataset-123"
+
+    fake_upload.called_with = None
+
+    monkeypatch.setattr(cli, "DatasetGenerator", StubGenerator)
+    monkeypatch.setattr(cli, "upload_dataset_to_langsmith", fake_upload)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "generate-dataset",
+            "--tools-file",
+            str(tools_file),
+            "--push-to-langsmith",
+            "--langsmith-api-key",
+            "ls-test",
+            "--langsmith-dataset-name",
+            "demo-dataset",
+            "--langsmith-project",
+            "demo-project",
+            "--langsmith-description",
+            "demo description",
+            "--langsmith-endpoint",
+            "https://example.com",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert fake_upload.called_with is not None
+    dataset, dataset_name, kwargs = fake_upload.called_with
+    assert dataset_name == "demo-dataset"
+    assert kwargs["api_key"] == "ls-test"
+    assert kwargs["endpoint"] == "https://example.com"
+    assert kwargs["project_name"] == "demo-project"
+    assert kwargs["description"] == "demo description"
+    assert any(
+        "Dataset uploaded to LangSmith" in message for message in dummy_console.messages
+    )
+    assert any("Dataset ID" in message for message in dummy_console.messages)
+
+
 def test_cli_version_command(monkeypatch) -> None:
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
