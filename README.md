@@ -15,9 +15,9 @@
 
 I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
 
-**Progress:** 5/30 PRs completed
+**Progress:** 6/30 PRs completed
 ```
-[████▌                         ] 17% (5/30)
+[█████                         ] 20% (6/30)
 ```
 **Days Remaining:** 25 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
 
@@ -325,12 +325,24 @@ mcp-doctor generate-dataset --target "npx firecrawl-mcp" --num-tasks 8 --output 
 # Generate tasks from a local JSON definition using OpenAI
 export OPENAI_API_KEY=sk-open-example
 mcp-doctor generate-dataset --tools-file tools.json --num-tasks 5
+
+# Generate tasks and upload them to LangSmith
+export LANGSMITH_API_KEY=ls-example
+mcp-doctor generate-dataset --target http://localhost:8000/mcp --num-tasks 5 \\
+  --push-to-langsmith --langsmith-project "MCP Evaluation" \\
+  --langsmith-dataset-name "MCP Doctor Synthetic"
 ```
 
 Set either `ANTHROPIC_API_KEY` (Claude 4 Sonnet) or `OPENAI_API_KEY` (GPT-4.1) before
 running the command. The output is a JSON array containing `prompt`, `tools_called`, and
 `tools_args` entries ready for downstream evaluations. Use `--llm-timeout` to extend the
 wait for slower model responses when needed (defaults to 60 seconds).
+
+Add `--push-to-langsmith` to stream the generated data straight into your LangSmith
+workspace. Provide a key via `--langsmith-api-key` or the `LANGSMITH_API_KEY` environment
+variable and optionally customize the dataset name (`--langsmith-dataset-name`), project
+tag (`--langsmith-project`), description (`--langsmith-description`), and API endpoint
+(`--langsmith-endpoint`).
 
 ### `version` Command
 Show version and diagnostic capabilities.
