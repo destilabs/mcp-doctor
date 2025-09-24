@@ -866,7 +866,7 @@ async def test_run_analysis_with_none_npx_kwargs(monkeypatch) -> None:
 def test_load_env_file_not_found(tmp_path) -> None:
     """Test _load_env_file raises FileNotFoundError for non-existent file."""
     non_existent_file = tmp_path / "does_not_exist.env"
-    
+
     with pytest.raises(FileNotFoundError):
         cli._load_env_file(non_existent_file)
 
@@ -881,9 +881,9 @@ def test_load_env_file_empty_lines_and_comments(tmp_path) -> None:
         "   \n"  # whitespace-only line
         "# Another comment\n"
         "KEY2=value2\n",
-        encoding="utf-8"
+        encoding="utf-8",
     )
-    
+
     result = cli._load_env_file(env_file)
     assert result == {"KEY1": "value1", "KEY2": "value2"}
 
@@ -892,12 +892,9 @@ def test_load_env_file_export_prefix(tmp_path) -> None:
     """Test _load_env_file handles export prefix correctly."""
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "export KEY1=value1\n"
-        "KEY2=value2\n"
-        "export KEY3=value3\n",
-        encoding="utf-8"
+        "export KEY1=value1\n" "KEY2=value2\n" "export KEY3=value3\n", encoding="utf-8"
     )
-    
+
     result = cli._load_env_file(env_file)
     assert result == {"KEY1": "value1", "KEY2": "value2", "KEY3": "value3"}
 
@@ -906,12 +903,10 @@ def test_load_env_file_invalid_line_no_equals(tmp_path) -> None:
     """Test _load_env_file raises ValueError for lines without equals sign."""
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "KEY1=value1\n"
-        "INVALID_LINE_WITHOUT_EQUALS\n"
-        "KEY2=value2\n",
-        encoding="utf-8"
+        "KEY1=value1\n" "INVALID_LINE_WITHOUT_EQUALS\n" "KEY2=value2\n",
+        encoding="utf-8",
     )
-    
+
     with pytest.raises(ValueError, match="Invalid env entry on line 2"):
         cli._load_env_file(env_file)
 
@@ -926,17 +921,17 @@ def test_load_env_file_quoted_values(tmp_path) -> None:
         "KEY4=unquoted\n"
         'KEY5=""\n'  # empty quoted value
         "KEY6=''\n",  # empty single quoted value
-        encoding="utf-8"
+        encoding="utf-8",
     )
-    
+
     result = cli._load_env_file(env_file)
     assert result == {
         "KEY1": "quoted value",
-        "KEY2": "single quoted", 
+        "KEY2": "single quoted",
         "KEY3": "value with spaces and symbols!@#",
         "KEY4": "unquoted",
         "KEY5": "",
-        "KEY6": ""
+        "KEY6": "",
     }
 
 
@@ -944,42 +939,42 @@ def test_load_env_file_mixed_quotes_not_stripped(tmp_path) -> None:
     """Test _load_env_file doesn't strip quotes when they don't match."""
     env_file = tmp_path / ".env"
     env_file.write_text(
-        'KEY1="mismatched\'\n'
-        "KEY2='also mismatched\"\n"
-        'KEY3="properly matched"\n',
-        encoding="utf-8"
+        "KEY1=\"mismatched'\n" "KEY2='also mismatched\"\n" 'KEY3="properly matched"\n',
+        encoding="utf-8",
     )
-    
+
     result = cli._load_env_file(env_file)
     assert result == {
-        "KEY1": '"mismatched\'',
-        "KEY2": "'also mismatched\"", 
-        "KEY3": "properly matched"
+        "KEY1": "\"mismatched'",
+        "KEY2": "'also mismatched\"",
+        "KEY3": "properly matched",
     }
 
 
 def test_load_and_apply_env_file_file_not_found(tmp_path) -> None:
     """Test _load_and_apply_env_file handles FileNotFoundError."""
     import typer
+
     dummy_console = DummyConsole()
     non_existent_file = tmp_path / "does_not_exist.env"
-    
+
     with pytest.raises(typer.Exit):
         cli._load_and_apply_env_file(non_existent_file, dummy_console)
-    
+
     assert any("Env file not found" in msg for msg in dummy_console.messages)
 
 
 def test_load_and_apply_env_file_value_error(tmp_path) -> None:
     """Test _load_and_apply_env_file handles ValueError from invalid env file."""
     import typer
+
     dummy_console = DummyConsole()
     env_file = tmp_path / ".env"
     env_file.write_text("INVALID_LINE_WITHOUT_EQUALS\n", encoding="utf-8")
-    
+
     with pytest.raises(typer.Exit):
         cli._load_and_apply_env_file(env_file, dummy_console)
-    
+
     assert any("Invalid env entry" in msg for msg in dummy_console.messages)
 
 
@@ -987,17 +982,20 @@ def test_load_and_apply_env_file_success(tmp_path, monkeypatch) -> None:
     """Test _load_and_apply_env_file successfully loads and applies env vars."""
     dummy_console = DummyConsole()
     env_file = tmp_path / ".env"
-    env_file.write_text("TEST_VAR=test_value\nANOTHER_VAR=another_value\n", encoding="utf-8")
-    
+    env_file.write_text(
+        "TEST_VAR=test_value\nANOTHER_VAR=another_value\n", encoding="utf-8"
+    )
+
     # Clear any existing env vars
     monkeypatch.delenv("TEST_VAR", raising=False)
     monkeypatch.delenv("ANOTHER_VAR", raising=False)
-    
+
     result = cli._load_and_apply_env_file(env_file, dummy_console)
-    
+
     assert result == {"TEST_VAR": "test_value", "ANOTHER_VAR": "another_value"}
     # Verify they were actually set in the environment
     import os
+
     assert os.environ.get("TEST_VAR") == "test_value"
     assert os.environ.get("ANOTHER_VAR") == "another_value"
 
@@ -1005,8 +1003,8 @@ def test_load_and_apply_env_file_success(tmp_path, monkeypatch) -> None:
 def test_load_and_apply_env_file_none(tmp_path) -> None:
     """Test _load_and_apply_env_file returns empty dict when env_file is None."""
     dummy_console = DummyConsole()
-    
+
     result = cli._load_and_apply_env_file(None, dummy_console)
-    
+
     assert result == {}
     assert len(dummy_console.messages) == 0
