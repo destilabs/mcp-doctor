@@ -1,70 +1,33 @@
 """Snyk checker integration for NPX-launched servers.
 
-This module extracts the package behind an NPX command and runs the
-`snyk check packages` CLI against it, parsing results into a concise structure.
+This module extracts the package behind an NPX command and runs the Snyk CLI
+(`snyk test npm:<package> --json`) against it, parsing results into a concise
+structure.
 
 Note: This relies on the Snyk CLI being installed and authenticated on the
-host system. We intentionally keep subprocess boundaries thin so tests can
-monkeypatch execution.
+host system. Subprocess boundaries are kept thin for easy test monkeypatching.
 """
 
 from __future__ import annotations
 
 import json
-import shlex
 import subprocess
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from .npx_launcher import parse_npx_command
-
-
-class SnykExecutionError(Exception):
-    """Raised when invoking the Snyk CLI fails unexpectedly."""
-
-
-class SnykNotInstalledError(Exception):
-    """Raised when the Snyk CLI is not available on PATH."""
-
-
-@dataclass
-class SnykIssue:
-    """Normalized representation of a vulnerability from Snyk output."""
-
-    id: str
-    title: str
-    severity: str
-    package: Optional[str] = None
-    version: Optional[str] = None
-    cves: Optional[List[str]] = None
-    url: Optional[str] = None
+from .snyk_types import SnykExecutionError, SnykNotInstalledError, SnykIssue
+from .snyk_extract import extract_package_from_npx
+from .snyk_json import parse_json_loose, normalize_issues
 
 
 class SnykPackageChecker:
-    """Runs `snyk check packages` for a given npm package."""
+    """Runs `snyk test npm:<package> --json` for a given npm package."""
 
     def __init__(self, snyk_cmd: str = "snyk", timeout: int = 120) -> None:
         self.snyk_cmd = snyk_cmd
         self.timeout = timeout
 
     def extract_package_from_npx(self, npx_command: str) -> str:
-        """Extract the npm package name from an NPX command.
-
-        Example:
-            "export TOKEN=1 && npx @scope/tool --flag" -> "@scope/tool"
-        """
-        clean, _ = parse_npx_command(npx_command)
-        parts = shlex.split(clean)
-        # Expect form: npx [flags] <package> [args]
-        pkg: Optional[str] = None
-        for token in parts[1:]:  # skip the 'npx'
-            if token.startswith("-"):
-                continue
-            pkg = token
-            break
-        if not pkg:
-            raise ValueError(f"Failed to extract package from NPX command: {npx_command}")
-        return pkg
+        return extract_package_from_npx(npx_command)
 
     def build_command(
         self,
@@ -77,12 +40,16 @@ class SnykPackageChecker:
 
         We default to JSON output so callers can parse regardless of exit code.
         """
-        cmd = [self.snyk_cmd, "check", "packages", package, "--json"]
+        # Use the purl-like npm spec for direct package tests
+        package_spec = f"npm:{package}"
+        cmd = [self.snyk_cmd, "test", package_spec, "--json"]
         if severity_threshold:
             cmd.append(f"--severity-threshold={severity_threshold}")
         if include_dev:
             cmd.append("--dev")
         return cmd
+
+    # Fallback method removed for simplicity and predictability.
 
     def _run_snyk(self, cmd: List[str]) -> Dict[str, Any]:
         """Execute Snyk and parse JSON output.
@@ -115,10 +82,12 @@ class SnykPackageChecker:
             )
 
         try:
-            # Some Snyk outputs are arrays; normalize into dict
-            data = json.loads(stdout)
+            data = parse_json_loose(stdout)
         except json.JSONDecodeError as exc:
-            raise SnykExecutionError(f"Failed to parse Snyk JSON: {exc}") from exc
+            preview = stdout[:200].replace("\n", " ")
+            raise SnykExecutionError(
+                f"Failed to parse Snyk JSON: {exc}. Stdout preview: {preview!r}"
+            ) from exc
         return {"data": data, "returncode": proc.returncode}
 
     def _normalize_issues(self, payload: Dict[str, Any]) -> List[SnykIssue]:
@@ -127,30 +96,7 @@ class SnykPackageChecker:
         We support a minimal shape so unit tests can simulate the structure.
         """
         data = payload.get("data")
-        issues: List[SnykIssue] = []
-
-        # Accept a top-level dict with `issues` or a raw list of issues
-        raw_issues: List[Dict[str, Any]]
-        if isinstance(data, dict) and isinstance(data.get("issues"), list):
-            raw_issues = data["issues"]
-        elif isinstance(data, list):
-            raw_issues = data
-        else:
-            raw_issues = []
-
-        for item in raw_issues:
-            issues.append(
-                SnykIssue(
-                    id=str(item.get("id") or item.get("issueId") or "unknown"),
-                    title=str(item.get("title") or item.get("problem") or ""),
-                    severity=str(item.get("severity") or "unknown"),
-                    package=item.get("package"),
-                    version=item.get("version"),
-                    cves=item.get("cves"),
-                    url=item.get("url") or item.get("identifierUrl"),
-                )
-            )
-        return issues
+        return normalize_issues(data)
 
     def check_npx_command(
         self,
@@ -178,4 +124,3 @@ class SnykPackageChecker:
             "issues": [issue.__dict__ for issue in issues],
             "raw": payload.get("data"),
         }
-

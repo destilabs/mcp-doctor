@@ -509,7 +509,7 @@ def audit_npx(
 
     checker = SnykPackageChecker(snyk_cmd=snyk_path)
     try:
-        with console.status("[bold green]Running Snyk check-packages..."):
+        with console.status("[bold green]Running Snyk test (npm package)..."):
             result = checker.check_npx_command(
                 target,
                 severity_threshold=severity_threshold,
@@ -528,9 +528,19 @@ def audit_npx(
         console.print_json(data=result)
         return
 
-    # Table-ish plaintext summary
+    # User-friendly summary by severity
+    sev_order = ["critical", "high", "medium", "low", "unknown"]
+    sev_emoji = {
+        "critical": "🚨",
+        "high": "🔥",
+        "medium": "⚠️",
+        "low": "ℹ️",
+        "unknown": "❔",
+    }
+    summary = result.get("summary", {})
+    ordered = [f"{sev_emoji.get(s, '')} {s}: {summary.get(s, 0)}" for s in sev_order]
     console.print(
-        f"Package: [bold]{result['package']}[/bold]  |  Issue counts: {result['summary']}"
+        f"Package: [bold]{result['package']}[/bold]  |  " + "  |  ".join(ordered)
     )
     if not result["issues"]:
         console.print("✅ No issues reported by Snyk.")
@@ -540,11 +550,20 @@ def audit_npx(
     console.print("\nTop issues:")
     max_rows = 10
     for i, issue in enumerate(result["issues"][:max_rows], start=1):
-        sev = str(issue.get("severity", "")).upper()
+        sev = str(issue.get("severity", "")).lower()
+        sev_tag = sev.upper()
+        emoji = sev_emoji.get(sev, "❔")
         title = issue.get("title", "")
         pkg = issue.get("package") or result["package"]
         ver = issue.get("version") or "?"
-        console.print(f"{i:2d}. [{sev}] {title} — {pkg}@{ver}")
+        cves = issue.get("cves") or []
+        url = issue.get("url")
+        extra = ""
+        if cves:
+            extra += f" | CVE: {', '.join(cves[:3])}{'…' if len(cves) > 3 else ''}"
+        if url:
+            extra += f" | {url}"
+        console.print(f"{i:2d}. {emoji} [{sev_tag}] {title} — {pkg}@{ver}{extra}")
     if len(result["issues"]) > max_rows:
         console.print(
             f"… and {len(result['issues']) - max_rows} more. Use --output json for details."

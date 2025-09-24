@@ -26,8 +26,8 @@ def test_extract_package_from_npx_with_flags_and_export() -> None:
 def test_build_command_defaults() -> None:
     checker = SnykPackageChecker(snyk_cmd="snyk")
     cmd = checker.build_command("demo-pkg")
-    assert cmd[:3] == ["snyk", "check", "packages"]
-    assert "demo-pkg" in cmd
+    assert cmd[:2] == ["snyk", "test"]
+    assert "npm:demo-pkg" in cmd
     assert "--json" in cmd
 
 
@@ -36,14 +36,15 @@ def test_check_npx_command_parses_issues(monkeypatch) -> None:
 
     fake_output = {
         "data": {
-            "issues": [
+            # Match common Snyk JSON: vulnerabilities at the top level
+            "vulnerabilities": [
                 {
                     "id": "ISSUE-1",
                     "title": "Prototype Pollution",
                     "severity": "high",
-                    "package": "some-package",
-                    "version": "1.0.0",
-                    "cves": ["CVE-2024-0001"],
+                    "packageName": "some-package",
+                    "pkgVersion": "1.0.0",
+                    "identifiers": {"CVE": ["CVE-2024-0001"]},
                 },
                 {
                     "id": "ISSUE-2",
@@ -83,4 +84,3 @@ def test_run_snyk_handles_bad_json(monkeypatch) -> None:
 
     with pytest.raises(SnykExecutionError):
         checker._run_snyk(["snyk", "check", "packages", "x", "--json"])  # type: ignore[arg-type]
-

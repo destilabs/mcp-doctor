@@ -174,6 +174,13 @@ mcp-doctor audit-npx --target "npx firecrawl-mcp" --severity-threshold high
 Requirements:
 - Install the Snyk CLI (`snyk`) and run `snyk auth` beforehand.
 - Optionally, set `--snyk-path` if `snyk` is not on PATH.
+  
+Under the hood, this command parses the NPX invocation to determine the npm
+package and runs:
+
+```bash
+snyk test npm:<package> --json
+```
 
 #### Install Snyk CLI
 
