@@ -158,6 +158,69 @@ mcp-doctor analyze --target "npx firecrawl-mcp" --env-vars '{"API_KEY": "abc123"
 mcp-doctor analyze --target "npx firecrawl-mcp" --working-dir "/path/to/project"
 ```
 
+### NPX Dependency Audit (Snyk)
+Audit the npm package behind an NPX server using Snyk:
+
+```bash
+mcp-doctor audit-npx --target "npx firecrawl-mcp"
+
+# JSON output for tooling
+mcp-doctor audit-npx --target "npx @scope/server --cli" --output-format json
+
+# Only show high+ severity
+mcp-doctor audit-npx --target "npx firecrawl-mcp" --severity-threshold high
+```
+
+Requirements:
+- Install the Snyk CLI (`snyk`) and run `snyk auth` beforehand.
+- Optionally, set `--snyk-path` if `snyk` is not on PATH.
+
+#### Install Snyk CLI
+
+Choose one method that fits your environment:
+
+- macOS (Homebrew):
+  ```bash
+  brew tap snyk/tap
+  brew install snyk
+  # verify
+  snyk --version
+  ```
+
+- Any OS (Node.js/npm):
+  ```bash
+  npm install -g snyk
+  snyk --version
+  ```
+
+- Linux/macOS (install script):
+  ```bash
+  curl -sL https://snyk.io/install.sh | sh
+  snyk --version
+  ```
+
+- Windows (Chocolatey):
+  ```powershell
+  choco install snyk -y
+  snyk --version
+  ```
+
+- Windows (Scoop):
+  ```powershell
+  scoop bucket add snyk https://github.com/snyk/scoop-snyk
+  scoop install snyk
+  snyk --version
+  ```
+
+Then authenticate the CLI once:
+
+```bash
+snyk auth
+```
+
+This opens a browser window to complete login; afterwards, you can run
+`mcp-doctor audit-npx ...` and Snyk will be able to fetch advisories.
+
 ## 📊 Output Formats
 
 ```bash

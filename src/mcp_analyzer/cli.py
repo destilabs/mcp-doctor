@@ -22,6 +22,11 @@ from .mcp_client import MCPClient
 from .npx_launcher import is_npx_command
 from .reports import ReportFormatter
 from .tool_utils import fetch_tools_for_dataset, load_tools_from_file
+from .snyk_checker import (
+    SnykExecutionError,
+    SnykNotInstalledError,
+    SnykPackageChecker,
+)
 
 console = Console()
 app = typer.Typer(
@@ -472,6 +477,78 @@ def version() -> None:
     console.print("• 🔮 Schema Validation (coming soon)")
     console.print("• ⚡ Performance Analysis (coming soon)")
     console.print("• 🔒 Security Audit (coming soon)")
+
+
+@app.command()
+def audit_npx(
+    target: str = typer.Option(
+        ..., help="NPX command for the server (e.g., 'npx firecrawl-mcp')"
+    ),
+    snyk_path: str = typer.Option(
+        "snyk", help="Path or name of the Snyk CLI executable"
+    ),
+    severity_threshold: Optional[str] = typer.Option(
+        None, help="Only report vulnerabilities at or above this severity"
+    ),
+    include_dev: bool = typer.Option(
+        False, help="Include dev dependencies where supported"
+    ),
+    output_format: OutputFormat = typer.Option(
+        OutputFormat.table, help="Output format for results"
+    ),
+):
+    """Run Snyk's package audit for the NPX package behind a server command."""
+    if not is_npx_command(target):
+        console.print(
+            "[red]❌ The --target provided is not an NPX command. Use e.g. 'npx <pkg>'.[/red]"
+        )
+        raise typer.Exit(1)
+
+    console.print("\n🛡️  [bold blue]Snyk Package Audit[/bold blue]")
+    console.print(f"NPX Command: [cyan]{target}[/cyan]")
+
+    checker = SnykPackageChecker(snyk_cmd=snyk_path)
+    try:
+        with console.status("[bold green]Running Snyk check-packages..."):
+            result = checker.check_npx_command(
+                target,
+                severity_threshold=severity_threshold,
+                include_dev=include_dev,
+            )
+    except SnykNotInstalledError as exc:
+        console.print(
+            f"[red]❌ {exc}. Install the Snyk CLI and authenticate (snyk auth).[/red]"
+        )
+        raise typer.Exit(1)
+    except SnykExecutionError as exc:
+        console.print(f"[red]❌ Snyk execution failed: {exc}[/red]")
+        raise typer.Exit(1)
+
+    if output_format == OutputFormat.json:
+        console.print_json(data=result)
+        return
+
+    # Table-ish plaintext summary
+    console.print(
+        f"Package: [bold]{result['package']}[/bold]  |  Issue counts: {result['summary']}"
+    )
+    if not result["issues"]:
+        console.print("✅ No issues reported by Snyk.")
+        return
+
+    # Show a compact list of top issues
+    console.print("\nTop issues:")
+    max_rows = 10
+    for i, issue in enumerate(result["issues"][:max_rows], start=1):
+        sev = str(issue.get("severity", "")).upper()
+        title = issue.get("title", "")
+        pkg = issue.get("package") or result["package"]
+        ver = issue.get("version") or "?"
+        console.print(f"{i:2d}. [{sev}] {title} — {pkg}@{ver}")
+    if len(result["issues"]) > max_rows:
+        console.print(
+            f"… and {len(result['issues']) - max_rows} more. Use --output json for details."
+        )
 
 
 if __name__ == "__main__":
