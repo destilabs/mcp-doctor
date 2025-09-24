@@ -126,7 +126,7 @@ def upload_dataset_to_langsmith(
                     "source": "mcp-doctor",
                     "dataset_id": str(dataset_obj.id),
                 },
-                end_time=dt.datetime.utcnow(),
+                end_time=dt.datetime.now(dt.timezone.utc),
             )
         except Exception:
             # Creating the bookkeeping run is best-effort; failures should not block upload.

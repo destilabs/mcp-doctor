@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -50,28 +50,50 @@ def _load_env_file(path: Path) -> Dict[str, str]:
         raise FileNotFoundError(path)
 
     env_vars: Dict[str, str] = {}
-    for index, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for index, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         line = raw_line.strip()
 
         if not line or line.startswith("#"):
             continue
-        
+
         if line.startswith("export "):
             line = line[len("export ") :].strip()
-        
+
         if "=" not in line:
             raise ValueError(f"Invalid env entry on line {index}: {raw_line!r}")
-        
+
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
-        
+
         if value and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1]
-        
+
         env_vars[key] = value
-    
+
     return env_vars
+
+
+def _load_and_apply_env_file(
+    env_file: Optional[Path], console: Console
+) -> Dict[str, str]:
+    """Load .env file and apply environment variables, returning the loaded variables."""
+    env_from_file: Dict[str, str] = {}
+
+    if env_file:
+        try:
+            env_from_file = _load_env_file(env_file)
+        except FileNotFoundError:
+            console.print(f"[red]❌ Env file not found: {env_file}[/red]")
+            raise typer.Exit(1)
+        except ValueError as exc:
+            console.print(f"[red]❌ {exc}[/red]")
+            raise typer.Exit(1)
+        for key, value in env_from_file.items():
+            os.environ.setdefault(key, value)
+    return env_from_file
 
 
 @app.command()
@@ -99,7 +121,7 @@ def analyze(
     env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
-        help="Path to a .env file whose values should be injected when running the command"
+        help="Path to a .env file whose values should be injected when running the command",
     ),
     working_dir: Optional[str] = typer.Option(
         None, "--working-dir", help="Working directory for NPX command"
@@ -139,21 +161,9 @@ def analyze(
     console.print(f"Check Type: [yellow]{check.value}[/yellow]\n")
 
     try:
+        env_from_file = _load_and_apply_env_file(env_file, console)
 
-        env_from_file: Dict[str, str] = {}
-        if env_file:
-            try:
-                env_from_file = _load_env_file(env_file)
-            except FileNotFoundError:
-                console.print(f"[red]❌ Env file not found: {env_file}[/red]")
-                raise typer.Exit(1)
-            except ValueError as exc:
-                console.print(f"[red]❌ {exc}[/red]")
-                raise typer.Exit(1)
-            for key, value in env_from_file.items():
-                os.environ.setdefault(key, value)
-
-        npx_kwargs = {}
+        npx_kwargs: Dict[str, Any] = {}
         if env_from_file:
             npx_kwargs["env_vars"] = dict(env_from_file)
         if env_vars:
@@ -292,7 +302,7 @@ def generate_dataset(
     env_file: Optional[Path] = typer.Option(
         None,
         "--env-file",
-        help="Path to a .env file whose values should be injected when running the command"
+        help="Path to a .env file whose values should be injected when running the command",
     ),
     working_dir: Optional[str] = typer.Option(
         None, "--working-dir", help="Working directory for NPX command"
@@ -342,7 +352,7 @@ def generate_dataset(
         "--langsmith-description",
         help="Optional LangSmith dataset description",
     ),
-    ) -> None:
+) -> None:
     """Generate synthetic datasets for MCP tool use cases."""
 
     if bool(target) == bool(tools_file):
@@ -352,18 +362,7 @@ def generate_dataset(
         raise typer.Exit(1)
 
     try:
-        env_from_file: Dict[str, str] = {}
-        if env_file:
-            try:
-                env_from_file = _load_env_file(env_file)
-            except FileNotFoundError:
-                console.print(f"[red]❌ Env file not found: {env_file}[/red]")
-                raise typer.Exit(1)
-            except ValueError as exc:
-                console.print(f"[red]❌ {exc}[/red]")
-                raise typer.Exit(1)
-            for key, value in env_from_file.items():
-                os.environ.setdefault(key, value)
+        env_from_file = _load_and_apply_env_file(env_file, console)
 
         if target:
             npx_kwargs: Dict[str, Any] = {}
@@ -409,7 +408,7 @@ def generate_dataset(
                 raise typer.Exit(1)
 
             resolved_dataset_name = langsmith_dataset_name or (
-                f"mcp-doctor-" + datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                "mcp-doctor-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             )
             resolved_description = langsmith_description or (
                 f"Synthetic dataset generated by MCP Doctor for {source_label}."

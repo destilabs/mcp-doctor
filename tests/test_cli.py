@@ -191,7 +191,9 @@ def test_cli_analyze_env_file(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         cli,
         "ReportFormatter",
-        lambda fmt: type("F", (), {"display_results": lambda self, data, verbose: None})(),
+        lambda fmt: type(
+            "F", (), {"display_results": lambda self, data, verbose: None}
+        )(),
     )
 
     result = runner.invoke(
@@ -514,7 +516,10 @@ def test_cli_evaluate_dataset_disabled(monkeypatch) -> None:
     result = runner.invoke(cli.app, ["evaluate-dataset"])
 
     assert result.exit_code != 0
-    assert any("Evaluation functionality has been temporarily disabled" in msg for msg in dummy_console.messages)
+    assert any(
+        "Evaluation functionality has been temporarily disabled" in msg
+        for msg in dummy_console.messages
+    )
 
 
 def test_cli_generate_dataset_langsmith_upload_error(monkeypatch, tmp_path) -> None:
@@ -543,6 +548,7 @@ def test_cli_generate_dataset_langsmith_upload_error(monkeypatch, tmp_path) -> N
 
     def fake_upload_error(dataset, dataset_name, **kwargs):
         from mcp_analyzer.langsmith_uploader import LangSmithUploadError
+
         raise LangSmithUploadError("Upload failed")
 
     monkeypatch.setattr(cli, "DatasetGenerator", StubGenerator)
@@ -566,7 +572,9 @@ def test_cli_generate_dataset_langsmith_upload_error(monkeypatch, tmp_path) -> N
     )
 
 
-def test_cli_generate_dataset_langsmith_upload_without_project(monkeypatch, tmp_path) -> None:
+def test_cli_generate_dataset_langsmith_upload_without_project(
+    monkeypatch, tmp_path
+) -> None:
     """Test LangSmith upload without project name (covers the if langsmith_project branch)."""
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
@@ -610,9 +618,7 @@ def test_cli_generate_dataset_langsmith_upload_without_project(monkeypatch, tmp_
 
     assert result.exit_code == 0
     # Should NOT have the "Tagged project" message since no project was specified
-    assert not any(
-        "Tagged project" in message for message in dummy_console.messages
-    )
+    assert not any("Tagged project" in message for message in dummy_console.messages)
     assert any(
         "Dataset uploaded to LangSmith" in message for message in dummy_console.messages
     )

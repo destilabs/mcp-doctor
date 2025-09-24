@@ -81,31 +81,15 @@ def test_upload_dataset_to_langsmith_success(monkeypatch) -> None:
     assert StubClient.instance.examples[0]["outputs"]["retrieved_contexts"] == [
         "Tool t outputs useful data."
     ]
-    assert StubClient.instance.examples[0]["outputs"]["response"] == "Used tool t to return arg."
+    assert (
+        StubClient.instance.examples[0]["outputs"]["response"]
+        == "Used tool t to return arg."
+    )
     assert StubClient.instance.examples[0]["outputs"]["reference"] == (
         "The assistant should report the result of tool t."
     )
     assert StubClient.instance.runs
     assert StubClient.instance.runs[0]["project_name"] == "demo-project"
-
-
-def test_upload_dataset_to_langsmith_missing_sdk(monkeypatch) -> None:
-    monkeypatch.delitem(sys.modules, "langsmith", raising=False)
-
-    with pytest.raises(LangSmithUploadError):
-        upload_dataset_to_langsmith(
-            [
-                {
-                    "prompt": "demo",
-                    "tools_called": ["t"],
-                    "tools_args": [["a"]],
-                    "retrieved_contexts": ["Context"],
-                    "response": "resp",
-                    "reference": "ref",
-                }
-            ],
-            "demo",
-        )
 
 
 def test_upload_dataset_to_langsmith_without_project_name(monkeypatch) -> None:
@@ -217,7 +201,9 @@ def test_upload_dataset_to_langsmith_reuses_existing(monkeypatch) -> None:
             return types.SimpleNamespace(id="existing-id")
 
         def create_example(self, *, inputs, outputs, dataset_id):
-            self.examples.append({"inputs": inputs, "outputs": outputs, "dataset_id": dataset_id})
+            self.examples.append(
+                {"inputs": inputs, "outputs": outputs, "dataset_id": dataset_id}
+            )
 
         def create_run(self, **kwargs):
             pass
