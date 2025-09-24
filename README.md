@@ -15,11 +15,11 @@
 
 I'm committing to **30 Pull Requests in 30 Days** to rapidly evolve MCP Doctor based on community feedback and real-world usage!
 
-**Progress:** 6/30 PRs completed
+**Progress:** 7/30 PRs completed
 ```
-[█████                         ] 20% (6/30)
+[██████                        ] 23% (7/30)
 ```
-**Days Remaining:** 25 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
+**Days Remaining:** 23 | **Started:** September 17, 2025 | **Ends:** October 17, 2025
 
 ---
 
@@ -309,6 +309,7 @@ mcp-doctor analyze [OPTIONS]
 - `--timeout INTEGER`: Request timeout in seconds (default: 30)
 - `--env-vars TEXT`: Environment variables for NPX command (JSON format)
 - `--working-dir TEXT`: Working directory for NPX command
+- `--env-file PATH`: Optional .env file loaded before running the command
 
 ### `generate-dataset` Command
 Create synthetic datasets of MCP tool use cases using Claude or GPT models.
@@ -328,21 +329,23 @@ mcp-doctor generate-dataset --tools-file tools.json --num-tasks 5
 
 # Generate tasks and upload them to LangSmith
 export LANGSMITH_API_KEY=ls-example
-mcp-doctor generate-dataset --target http://localhost:8000/mcp --num-tasks 5 \\
-  --push-to-langsmith --langsmith-project "MCP Evaluation" \\
+mcp-doctor generate-dataset --target http://localhost:8000/mcp --num-tasks 5 \
+  --push-to-langsmith --langsmith-project "MCP Evaluation" \
   --langsmith-dataset-name "MCP Doctor Synthetic"
 ```
 
 Set either `ANTHROPIC_API_KEY` (Claude 4 Sonnet) or `OPENAI_API_KEY` (GPT-4.1) before
-running the command. The output is a JSON array containing `prompt`, `tools_called`, and
-`tools_args` entries ready for downstream evaluations. Use `--llm-timeout` to extend the
-wait for slower model responses when needed (defaults to 60 seconds).
+running the command. The output is a JSON array containing `prompt`, `tools_called`,
+`tools_args`, `retrieved_contexts`, `response`, and `reference` entries ready for
+downstream evaluations. Use `--llm-timeout` to extend the wait for slower model responses
+when needed (defaults to 60 seconds).
 
 Add `--push-to-langsmith` to stream the generated data straight into your LangSmith
 workspace. Provide a key via `--langsmith-api-key` or the `LANGSMITH_API_KEY` environment
 variable and optionally customize the dataset name (`--langsmith-dataset-name`), project
 tag (`--langsmith-project`), description (`--langsmith-description`), and API endpoint
-(`--langsmith-endpoint`).
+(`--langsmith-endpoint`). Use `--env-file path/to/.env` when you prefer file-based secrets
+over inline JSON.
 
 ### `version` Command
 Show version and diagnostic capabilities.
