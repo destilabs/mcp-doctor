@@ -22,6 +22,9 @@ def _build_outputs(entry: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "tools_called": entry.get("tools_called"),
         "tools_args": entry.get("tools_args"),
+        "retrieved_contexts": entry.get("retrieved_contexts"),
+        "response": entry.get("response"),
+        "reference": entry.get("reference"),
     }
 
 
@@ -33,7 +36,7 @@ def upload_dataset_to_langsmith(
     endpoint: Optional[str] = None,
     project_name: Optional[str] = None,
     description: Optional[str] = None,
-) -> str:
+) -> tuple[str, bool]:
     """Create a LangSmith dataset populated with generated examples.
 
     Args:
@@ -83,10 +86,16 @@ def upload_dataset_to_langsmith(
 
     try:
         dataset_obj = client.create_dataset(dataset_name, **create_kwargs)
+        reused_existing = False
     except Exception as exc:  # pragma: no cover - depends on LangSmith client behavior
-        raise LangSmithUploadError(
-            f"Failed to create LangSmith dataset '{dataset_name}'"
-        ) from exc
+        try:
+            dataset_obj = client.read_dataset(dataset_name=dataset_name)
+        except Exception:
+            raise LangSmithUploadError(
+                f"Failed to create LangSmith dataset '{dataset_name}'"
+            ) from exc
+        else:
+            reused_existing = True
 
     for entry in dataset:
         inputs = _build_inputs(entry)
@@ -123,4 +132,4 @@ def upload_dataset_to_langsmith(
             # Creating the bookkeeping run is best-effort; failures should not block upload.
             pass
 
-    return str(dataset_obj.id)
+    return str(dataset_obj.id), reused_existing

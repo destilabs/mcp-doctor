@@ -43,6 +43,37 @@ class OutputFormat(str, Enum):
     yaml = "yaml"
 
 
+def _load_env_file(path: Path) -> Dict[str, str]:
+    """Parse simple .env style files into a dictionary."""
+
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    env_vars: Dict[str, str] = {}
+    for index, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+        
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        
+        if "=" not in line:
+            raise ValueError(f"Invalid env entry on line {index}: {raw_line!r}")
+        
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        
+        if value and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        
+        env_vars[key] = value
+    
+    return env_vars
+
+
 @app.command()
 def analyze(
     target: str = typer.Option(
@@ -64,6 +95,11 @@ def analyze(
         None,
         "--env-vars",
         help='Environment variables for NPX command (JSON format: \'{"API_KEY": "value"}\')',
+    ),
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        help="Path to a .env file whose values should be injected when running the command"
     ),
     working_dir: Optional[str] = typer.Option(
         None, "--working-dir", help="Working directory for NPX command"
@@ -104,15 +140,33 @@ def analyze(
 
     try:
 
+        env_from_file: Dict[str, str] = {}
+        if env_file:
+            try:
+                env_from_file = _load_env_file(env_file)
+            except FileNotFoundError:
+                console.print(f"[red]❌ Env file not found: {env_file}[/red]")
+                raise typer.Exit(1)
+            except ValueError as exc:
+                console.print(f"[red]❌ {exc}[/red]")
+                raise typer.Exit(1)
+            for key, value in env_from_file.items():
+                os.environ.setdefault(key, value)
+
         npx_kwargs = {}
+        if env_from_file:
+            npx_kwargs["env_vars"] = dict(env_from_file)
         if env_vars:
             import json
 
             try:
-                npx_kwargs["env_vars"] = json.loads(env_vars)
+                env_payload = json.loads(env_vars)
             except json.JSONDecodeError as e:
                 console.print(f"[red]❌ Invalid JSON in env-vars: {e}[/red]")
                 raise typer.Exit(1)
+            combined = npx_kwargs.get("env_vars", {}).copy()
+            combined.update(env_payload)
+            npx_kwargs["env_vars"] = combined
 
         if working_dir:
             npx_kwargs["working_dir"] = working_dir
@@ -235,6 +289,11 @@ def generate_dataset(
         "--env-vars",
         help='Environment variables for NPX command (JSON format: \'{"API_KEY": "value"}\')',
     ),
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        help="Path to a .env file whose values should be injected when running the command"
+    ),
     working_dir: Optional[str] = typer.Option(
         None, "--working-dir", help="Working directory for NPX command"
     ),
@@ -283,7 +342,7 @@ def generate_dataset(
         "--langsmith-description",
         help="Optional LangSmith dataset description",
     ),
-) -> None:
+    ) -> None:
     """Generate synthetic datasets for MCP tool use cases."""
 
     if bool(target) == bool(tools_file):
@@ -293,13 +352,31 @@ def generate_dataset(
         raise typer.Exit(1)
 
     try:
+        env_from_file: Dict[str, str] = {}
+        if env_file:
+            try:
+                env_from_file = _load_env_file(env_file)
+            except FileNotFoundError:
+                console.print(f"[red]❌ Env file not found: {env_file}[/red]")
+                raise typer.Exit(1)
+            except ValueError as exc:
+                console.print(f"[red]❌ {exc}[/red]")
+                raise typer.Exit(1)
+            for key, value in env_from_file.items():
+                os.environ.setdefault(key, value)
+
         if target:
             npx_kwargs: Dict[str, Any] = {}
+            if env_from_file:
+                npx_kwargs["env_vars"] = dict(env_from_file)
             if env_vars:
                 try:
-                    npx_kwargs["env_vars"] = json.loads(env_vars)
+                    env_payload = json.loads(env_vars)
                 except json.JSONDecodeError as exc:
                     raise DatasetGenerationError(f"Invalid JSON in env-vars: {exc}")
+                merged_env = npx_kwargs.get("env_vars", {}).copy()
+                merged_env.update(env_payload)
+                npx_kwargs["env_vars"] = merged_env
 
             if working_dir:
                 npx_kwargs["working_dir"] = working_dir
@@ -339,7 +416,7 @@ def generate_dataset(
             )
 
             try:
-                dataset_id = upload_dataset_to_langsmith(
+                dataset_id, reused_existing = upload_dataset_to_langsmith(
                     dataset,
                     resolved_dataset_name,
                     api_key=effective_api_key,
@@ -351,9 +428,16 @@ def generate_dataset(
                 console.print(f"[red]❌ LangSmith upload failed: {exc}[/red]")
                 raise typer.Exit(1)
 
-            console.print(
-                f"✅ Dataset uploaded to LangSmith as [cyan]{resolved_dataset_name}[/cyan]"
-            )
+            if reused_existing:
+                console.print(
+                    "♻️ Reused existing LangSmith dataset "
+                    f"[cyan]{resolved_dataset_name}[/cyan]"
+                )
+            else:
+                console.print(
+                    "✅ Dataset uploaded to LangSmith as "
+                    f"[cyan]{resolved_dataset_name}[/cyan]"
+                )
             if langsmith_project:
                 console.print(
                     f"🔖 Tagged project: [magenta]{langsmith_project}[/magenta]"
@@ -363,6 +447,17 @@ def generate_dataset(
     except DatasetGenerationError as exc:
         console.print(f"[red]❌ {exc}[/red]")
         raise typer.Exit(1)
+
+
+@app.command()
+def evaluate_dataset() -> None:
+    """(Temporarily disabled)"""
+
+    console.print(
+        "[yellow]⚠️ Evaluation functionality has been temporarily disabled. "
+        "Stay tuned for future updates.[/yellow]"
+    )
+    raise typer.Exit(1)
 
 
 @app.command()
