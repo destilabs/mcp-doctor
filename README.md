@@ -307,6 +307,7 @@ mcp-doctor analyze [OPTIONS]
 - `--output-format {table,json,yaml}`: Output format (default: table)
 - `--verbose / --no-verbose`: Show detailed diagnostic output (default: False)
 - `--timeout INTEGER`: Request timeout in seconds (default: 30)
+- `--param-retries INTEGER`: Max retries to auto-repair invalid tool parameters during token efficiency checks (default: 5)
 - `--env-vars TEXT`: Environment variables for NPX command (JSON format)
 - `--working-dir TEXT`: Working directory for NPX command
 - `--env-file PATH`: Optional .env file loaded before running the command
@@ -420,10 +421,11 @@ This project uses automated code formatting and linting:
 # Auto-format code (black + isort)
 ./scripts/format.sh
 
-# Check code quality (black + isort + mypy)
+# Check code quality (ruff + black + mypy)
 ./scripts/lint.sh
 
 # Or run individual tools
+ruff check src/ tests/
 black src/ tests/
 isort src/ tests/
 mypy src/

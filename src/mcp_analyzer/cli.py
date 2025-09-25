@@ -131,6 +131,11 @@ def analyze(
         "--no-env-logging",
         help="Disable environment variable logging for security",
     ),
+    param_retries: int = typer.Option(
+        5,
+        "--param-retries",
+        help="Max retries to auto-repair invalid tool parameters during token efficiency checks",
+    ),
 ) -> None:
     """
     Diagnose an MCP server for agent-friendliness and best practices compliance.
@@ -191,6 +196,7 @@ def analyze(
                 timeout,
                 verbose,
                 npx_kwargs,
+                param_retries,
             )
         )
 
@@ -208,6 +214,7 @@ async def _run_analysis(
     timeout: int,
     verbose: bool,
     npx_kwargs: Optional[dict] = None,
+    param_retries: int = 5,
 ) -> dict:
     """Run the actual analysis logic."""
 
@@ -255,7 +262,9 @@ async def _run_analysis(
 
         if check in {CheckType.token_efficiency, CheckType.all}:
             with console.status("[bold green]Analyzing token efficiency..."):
-                efficiency_checker = TokenEfficiencyChecker()
+                efficiency_checker = TokenEfficiencyChecker(
+                    max_param_retries=param_retries
+                )
                 efficiency_results = await efficiency_checker.analyze_token_efficiency(
                     tools, client
                 )

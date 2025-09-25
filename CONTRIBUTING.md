@@ -32,7 +32,7 @@ coverage run -m pytest tests/
 coverage report -m
 ```
 
-### Code Formatting
+### Code Formatting & Linting
 ```bash
 # Format code
 black src/ tests/
@@ -41,6 +41,9 @@ isort src/ tests/
 # Check formatting
 black --check --diff src/ tests/
 isort --check-only --diff src/ tests/
+
+# Lint (static analysis)
+ruff check src/ tests/
 ```
 
 ### Type Checking
@@ -54,6 +57,7 @@ mypy src/ --ignore-missing-imports --no-strict-optional --allow-untyped-defs
 - Follow PEP 8 guidelines
 - Use Black for code formatting
 - Use isort for import sorting
+ - Use Ruff for linting and import rules
 - Add type hints where possible
 - Write descriptive docstrings
 
@@ -103,6 +107,7 @@ We love new ideas! When suggesting features:
 3. **Test your changes**:
    ```bash
    python -m pytest tests/ -v
+   ruff check src/ tests/
    black --check src/ tests/
    isort --check-only src/ tests/
    ```

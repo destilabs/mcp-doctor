@@ -2,7 +2,8 @@
 
 from .descriptions import DescriptionChecker, DescriptionIssue
 from .security import SecurityChecker, SecurityFinding, VulnerabilityLevel
-from .token_efficiency import TokenEfficiencyChecker, TokenEfficiencyIssue
+from .token_efficiency import TokenEfficiencyChecker
+from .token_efficiency_models import TokenEfficiencyIssue
 
 __all__ = [
     "DescriptionChecker",

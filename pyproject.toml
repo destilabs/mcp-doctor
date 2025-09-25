@@ -40,6 +40,7 @@ dev = [
     "isort>=5.10.0",
     "mypy>=1.0.0",
     "types-PyYAML>=6.0.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]
@@ -124,3 +125,17 @@ addopts = [
     "-v",
 ]
 asyncio_mode = "auto"
+
+# Ruff configuration (linting)
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Enable common rule sets: 
+#  - E/W (pycodestyle), F (pyflakes), I (import sorting via isort)
+select = ["E", "F", "W", "I"]
+ignore = []
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

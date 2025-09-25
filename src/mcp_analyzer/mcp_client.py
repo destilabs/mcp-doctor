@@ -1,12 +1,19 @@
 """MCP server client for fetching tool information."""
 
 import asyncio
+import json
 import logging
-from typing import Any, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+if TYPE_CHECKING:
+    from .dataset_generator import (
+        LLMClient,
+        ModelProvider,
+        resolve_provider,
+    )
 from .mcp_sse_client import MCPSSEClient
 from .mcp_stdio_client import MCPStdioClient
 from .npx_launcher import NPXLauncherError, NPXServerManager, is_npx_command
@@ -46,6 +53,7 @@ class MCPClient:
         server_target: str,
         timeout: int = 30,
         transport: str = "auto",
+        llm_client: Optional["LLMClient"] = None,
         **npx_kwargs: Any,
     ) -> None:
         """
@@ -66,6 +74,7 @@ class MCPClient:
         self._sse_client: Optional[MCPSSEClient] = None
         self._is_npx_server = is_npx_command(server_target)
         self._actual_server_url: Optional[str] = None
+        self._llm_client: Optional["LLMClient"] = None
 
         self._transport = self._detect_transport_type(transport)
 
@@ -576,3 +585,248 @@ class MCPClient:
         if self._sse_client:
             await self._sse_client.close()
             self._sse_client = None
+
+    async def run_chat(
+        self,
+        messages: List[Dict[str, Any]],
+        available_tools: List[Dict[str, Any]] | List[MCPTool],
+        *,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        system: Optional[str] = None,
+        max_tool_rounds: int = 3,
+    ) -> Dict[str, Any]:
+        """
+        Run a single chat turn with optional tool use orchestrated by the LLM.
+
+        Args:
+            messages: Conversation messages in Anthropic-compatible format.
+            available_tools: Tools available to the LLM (MCPTool or dict format).
+            model: Optional model override; otherwise resolved from environment.
+            max_tokens: Maximum tokens for the LLM response.
+            system: Optional system prompt to include in the request.
+            max_tool_rounds: Safety cap for tool-use iterations.
+
+        Returns:
+            Dict containing the final assistant text and tool call events:
+            {
+              "final_text": str,
+              "tool_calls": [
+                 {"id": str, "name": str, "input": dict, "result": Any}
+              ]
+            }
+
+        Notes:
+            - Uses Anthropic Messages API for tool use when ANTHROPIC_API_KEY is set.
+            - If only OPENAI_API_KEY is set, falls back to a plain text response
+              without tool execution.
+        """
+        # Resolve provider (Anthropic preferred if configured)
+        from .dataset_generator import resolve_provider
+        provider = resolve_provider(model=model)
+
+        # Prepare tools payload for Anthropic format
+        tools_payload: List[Dict[str, Any]] = []
+        for t in available_tools:
+            if isinstance(t, MCPTool):
+                schema = t.input_schema or t.parameters or {}
+                tools_payload.append(
+                    {
+                        "name": t.name,
+                        "description": t.description or "",
+                        "input_schema": schema,
+                    }
+                )
+            elif isinstance(t, dict):
+                # Accept pre-shaped dicts; normalize keys if possible
+                name = t.get("name")
+                if not name:
+                    continue
+                description = t.get("description", "")
+                schema = t.get("input_schema") or t.get("inputSchema") or t.get("parameters") or {}
+                tools_payload.append(
+                    {
+                        "name": name,
+                        "description": description,
+                        "input_schema": schema,
+                    }
+                )
+
+        # Anthropic tool-use orchestration
+        from .dataset_generator import ModelProvider
+        if provider.provider == ModelProvider.ANTHROPIC:
+            base_url = "https://api.anthropic.com"
+            api_version = "2023-06-01"
+            api_key = provider.api_key
+
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": api_version,
+                "content-type": "application/json",
+            }
+
+            # Copy messages to avoid mutating input
+            convo: List[Dict[str, Any]] = list(messages)
+            if system:
+                convo = [{"role": "system", "content": system}] + convo
+
+            final_text_parts: List[str] = []
+            tool_calls: List[Dict[str, Any]] = []
+            rounds = 0
+
+            async with httpx.AsyncClient(timeout=self.timeout, base_url=base_url) as client:
+                while rounds <= max_tool_rounds:
+                    payload: Dict[str, Any] = {
+                        "model": provider.model,
+                        "max_tokens": max_tokens,
+                        "messages": convo,
+                    }
+                    if tools_payload:
+                        payload["tools"] = tools_payload
+
+                    resp = await client.post("/v1/messages", headers=headers, json=payload)
+                    try:
+                        resp.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        raise MCPClientError(
+                            f"Anthropic API request failed with status {exc.response.status_code}"
+                        ) from exc
+
+                    data = resp.json()
+                    content_list = data.get("content", [])
+                    if not isinstance(content_list, list):
+                        raise MCPClientError("Unexpected Anthropic response format: content")
+
+                    assistant_blocks: List[Dict[str, Any]] = []
+                    tool_used = False
+
+                    for block in content_list:
+                        btype = block.get("type")
+                        if btype == "text":
+                            text = block.get("text", "")
+                            if isinstance(text, str) and text:
+                                final_text_parts.append(text)
+                                assistant_blocks.append({"type": "text", "text": text})
+                        elif btype == "tool_use":
+                            tool_used = True
+                            tool_name = block.get("name")
+                            tool_args = block.get("input") or {}
+                            tool_use_id = block.get("id")
+
+                            # Append assistant message including the tool_use block
+                            assistant_blocks.append(block)
+                            convo.append({"role": "assistant", "content": assistant_blocks})
+
+                            # Execute tool via our MCP transport
+                            try:
+                                tool_result = await self.call_tool(
+                                    cast(str, tool_name), cast(Dict[str, Any], tool_args)
+                                )
+                            except Exception as e:
+                                tool_result = {"error": str(e)}
+
+                            # Record tool call event
+                            tool_calls.append(
+                                {
+                                    "id": tool_use_id,
+                                    "name": tool_name,
+                                    "input": tool_args,
+                                    "result": tool_result,
+                                }
+                            )
+
+                            # Normalize tool_result content for Anthropic
+                            tool_result_content: List[Dict[str, Any]]
+                            if isinstance(tool_result, dict) and isinstance(
+                                tool_result.get("content"), list
+                            ):
+                                # Assume MCP-style content blocks
+                                tool_result_content = cast(List[Dict[str, Any]], tool_result["content"])  # type: ignore[index]
+                            else:
+                                # Fallback: stringify JSON
+                                tool_result_content = [
+                                    {
+                                        "type": "text",
+                                        "text": json.dumps(tool_result, ensure_ascii=False),
+                                    }
+                                ]
+
+                            # Append tool_result as a user message per Anthropic API
+                            convo.append(
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_use_id,
+                                            "content": tool_result_content,
+                                        }
+                                    ],
+                                }
+                            )
+
+                            # After handling a tool, break to request next turn
+                            break
+
+                    if not tool_used:
+                        # No tool use requested; return accumulated text
+                        break
+
+                    rounds += 1
+
+            return {
+                "final_text": "\n".join(p.strip() for p in final_text_parts if p).strip(),
+                "tool_calls": tool_calls,
+            }
+
+        # OpenAI fallback: plain response (no tool execution)
+        # This keeps implementation minimal without adding OpenAI tool-calling logic.
+        # We send the last user message content as a single prompt.
+        last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+        prompt = last_user.get("content") if isinstance(last_user, dict) else None
+        if not isinstance(prompt, str):
+            # If content is structured, serialize minimally
+            prompt = str(last_user)
+
+        # Reuse the minimal clients to get a text answer without tools
+        if provider.provider == ModelProvider.OPENAI:
+            async with httpx.AsyncClient(timeout=self.timeout, base_url="https://api.openai.com") as client:
+                headers = {
+                    "authorization": f"Bearer {provider.api_key}",
+                    "content-type": "application/json",
+                }
+                payload = {
+                    "model": provider.model,
+                    "input": prompt,
+                    "max_output_tokens": max_tokens,
+                }
+                resp = await client.post("/v1/responses", headers=headers, json=payload)
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise MCPClientError(
+                        f"OpenAI API request failed with status {exc.response.status_code}"
+                    ) from exc
+                data = resp.json()
+                # Best-effort extraction similar to OpenAIClient._extract_text
+                output_text = data.get("output_text")
+                if isinstance(output_text, str) and output_text.strip():
+                    return {"final_text": output_text.strip(), "tool_calls": []}
+                if isinstance(output_text, list):
+                    joined = "\n".join(
+                        part.strip() for part in output_text if isinstance(part, str)
+                    )
+                    if joined.strip():
+                        return {"final_text": joined.strip(), "tool_calls": []}
+                choices = data.get("choices")
+                if isinstance(choices, list) and choices:
+                    first = choices[0]
+                    if isinstance(first, dict):
+                        msg = first.get("message")
+                        if isinstance(msg, dict) and isinstance(msg.get("content"), str):
+                            return {"final_text": cast(str, msg["content"]).strip(), "tool_calls": []}
+                # Fallback: raw JSON
+                return {"final_text": str(data), "tool_calls": []}
+
+        # If no supported provider found (should not happen due to resolve_provider)
+        raise MCPClientError("No supported LLM provider configured for run_chat")

@@ -7,6 +7,9 @@ set -e
 
 echo "🔍 Running linting checks..."
 
+echo "🧹 Static analysis with ruff..."
+ruff check src/ tests/
+
 echo "📝 Checking code formatting with black..."
 black --check --diff src/ tests/
 

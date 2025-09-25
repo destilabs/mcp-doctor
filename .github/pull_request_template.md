@@ -15,6 +15,7 @@ Brief description of what this PR does.
 ## Testing
 
 - [ ] Tests pass locally with `pytest tests/`
+- [ ] Lint passes with `ruff check src/ tests/`
 - [ ] Code is formatted with `black src/ tests/`
 - [ ] Imports are sorted with `isort src/ tests/`
 - [ ] Type checking with `mypy src/`

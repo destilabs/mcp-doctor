@@ -4,80 +4,24 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
+
+from ..dataset_generator import (
+    AnthropicClient,
+    ModelProvider,
+    OpenAIClient,
+    resolve_provider,
+)
+from .token_efficiency_models import (
+    EvaluationScenario,
+    IssueType,
+    ResponseMetric,
+    ResponseMetrics,
+    Severity,
+    TokenEfficiencyIssue,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class IssueType(str, Enum):
-    """Types of token efficiency issues that can be found."""
-
-    OVERSIZED_RESPONSE = "oversized_response"
-    NO_PAGINATION = "no_pagination"
-    VERBOSE_IDENTIFIERS = "verbose_identifiers"
-    MISSING_FILTERING = "missing_filtering"
-    REDUNDANT_DATA = "redundant_data"
-    POOR_DEFAULT_LIMITS = "poor_default_limits"
-    MISSING_TRUNCATION = "missing_truncation"
-    NO_RESPONSE_FORMAT_CONTROL = "no_response_format_control"
-
-
-class Severity(str, Enum):
-    """Issue severity levels."""
-
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-
-
-@dataclass
-class EvaluationScenario:
-    """Evaluation scenario for tool execution."""
-
-    name: str
-    params: Dict[str, Any]
-    description: str
-
-
-@dataclass
-class ResponseMetric:
-    """Metrics for a single tool response."""
-
-    scenario: str
-    token_count: int
-    response_time: float
-    response_size_bytes: int
-    contains_low_value_data: bool
-    has_verbose_identifiers: bool
-    is_truncated: bool = False
-    error: Optional[str] = None
-
-
-@dataclass
-class ResponseMetrics:
-    """Collection of response metrics for a tool."""
-
-    tool_name: str
-    measurements: List[ResponseMetric]
-    avg_tokens: float = 0
-    max_tokens: int = 0
-    min_tokens: int = 0
-
-
-@dataclass
-class TokenEfficiencyIssue:
-    """Represents a token efficiency issue found in tools."""
-
-    tool_name: str
-    issue_type: IssueType
-    severity: Severity
-    message: str
-    suggestion: str
-    scenario: Optional[str] = None
-    field: Optional[str] = None
-    measured_tokens: Optional[int] = None
 
 
 class TokenEfficiencyChecker:
@@ -91,9 +35,35 @@ class TokenEfficiencyChecker:
     - Use semantic identifiers instead of technical ones
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        max_param_retries: int = 5,
+        enable_llm_repair: bool = True,
+        llm_model: Optional[str] = None,
+        llm_timeout: float = 30.0,
+    ) -> None:
         self.max_recommended_tokens = 25000  # From Anthropic's article
         self.sample_requests_per_tool = 3  # Test multiple scenarios
+        self.max_param_retries = max(0, int(max_param_retries))
+
+        self._llm_client = None
+        if enable_llm_repair:
+            try:
+                provider = resolve_provider(model=llm_model)
+                if provider.provider == ModelProvider.ANTHROPIC:
+                    self._llm_client = AnthropicClient(
+                        provider.api_key, provider.model, timeout=llm_timeout
+                    )
+                else:
+                    self._llm_client = OpenAIClient(
+                        provider.api_key, provider.model, timeout=llm_timeout
+                    )
+                logger.debug("LLM client initialized for parameter repair")
+            except Exception as e:  # pragma: no cover - environment dependent
+                logger.info(
+                    f"LLM parameter repair disabled (no provider available): {e}"
+                )
 
         # Patterns for detecting verbose identifiers
         self.verbose_id_patterns = [
@@ -243,8 +213,8 @@ class TokenEfficiencyChecker:
 
     def _analyze_tool_schema(self, tool: Any) -> List[TokenEfficiencyIssue]:
         """Analyze tool schema for potential token efficiency issues."""
+        # TODO: What if the tool doesn't need pagination, filtering, or response control
         issues = []
-        tool_name = getattr(tool, "name", "unknown_tool")
 
         # Check for pagination support
         issues.extend(self._check_pagination_support(tool))
@@ -363,40 +333,139 @@ class TokenEfficiencyChecker:
         tool_name = getattr(tool, "name", "unknown_tool")
         logger.debug(f"Measuring response sizes for tool: {tool_name}")
 
-        # Generate test scenarios
-        test_scenarios = self._generate_test_scenarios(tool)
+        # Generate test scenarios (LLM first, fallback to static)
+        try:
+            test_scenarios = await self._generate_llm_test_scenarios(tool)
+        except Exception as e:
+            logger.debug(f"LLM scenario generation failed or unavailable: {e}")
+            test_scenarios = self._generate_test_scenarios(tool)
 
         measurements = []
         for scenario in test_scenarios:
             try:
                 start_time = time.time()
 
-                # Execute tool call
-                response = await mcp_client.call_tool(tool_name, scenario.params)
+                # Execute tool call with bounded parameter repair retries
+                response = None
+                last_error: Optional[Exception] = None
+                current_params = dict(scenario.params)
+                for attempt in range(self.max_param_retries + 1):
+                    try:
+                        # Prefer LLM-orchestrated tool execution if available
+                        try:
+                            messages = [
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "You are connected to tools. For this request, you must call the specific tool with the exact arguments provided. "
+                                        "Do not fabricate results—use the tool and then provide a brief summary.\n\n"
+                                        f"Tool to call: {tool_name}\n"
+                                        f"Arguments (JSON): {json.dumps(current_params, ensure_ascii=False)}"
+                                    ),
+                                }
+                            ]
+
+                            chat_result = await mcp_client.run_chat(
+                                messages,
+                                available_tools=[tool],
+                                system=(
+                                    "You are a tool-using assistant. Always invoke the requested tool with the provided arguments."
+                                ),
+                                max_tokens=400,
+                                max_tool_rounds=1,
+                            )
+                            tool_calls = chat_result.get("tool_calls", []) if isinstance(chat_result, dict) else []
+                            # Find the first call matching this tool
+                            matching = next(
+                                (c for c in tool_calls if c.get("name") == tool_name),
+                                None,
+                            )
+                            if matching and "result" in matching:
+                                response = matching["result"]
+                            else:
+                                # Fallback to direct execution if LLM didn't call the tool
+                                response = await mcp_client.call_tool(tool_name, current_params)
+                        except Exception:
+                            # If LLM path fails, fallback to direct tool call
+                            response = await mcp_client.call_tool(tool_name, current_params)
+                        # Detect error-like responses that don't raise
+                        error_text = self._extract_error_from_response(response)
+                        if error_text:
+                            raise RuntimeError(error_text)
+                        last_error = None
+                        break
+                    except Exception as call_exc:  # collect and try to repair
+                        last_error = call_exc
+                        if attempt >= self.max_param_retries:
+                            break
+                        # Try schema-based quick repair first
+                        repaired = self._try_schema_based_param_repair(
+                            tool, current_params, str(call_exc)
+                        )
+                        if not repaired and self._llm_client is not None:
+                            # Fallback to LLM-based repair
+                            try:
+                                repaired = await self._try_llm_param_repair(
+                                    tool, current_params, str(call_exc)
+                                )
+                            except Exception as llm_exc:  # pragma: no cover
+                                logger.debug(
+                                    f"LLM repair attempt failed: {llm_exc}"
+                                )
+                                repaired = None
+                        if repaired:
+                            logger.debug(
+                                f"Repaired params on attempt {attempt+1} for {tool_name}"
+                            )
+                            current_params = repaired
+                            continue
+                        else:
+                            # No repair available; stop retrying early
+                            break
 
                 end_time = time.time()
 
                 # Analyze response
-                token_count = self._estimate_token_count(response)
-                response_size = len(json.dumps(response, ensure_ascii=False))
+                if response is not None:
+                    token_count = self._estimate_token_count(response)
+                    response_size = len(json.dumps(response, ensure_ascii=False))
 
-                measurements.append(
-                    ResponseMetric(
-                        scenario=scenario.name,
-                        token_count=token_count,
-                        response_time=end_time - start_time,
-                        response_size_bytes=response_size,
-                        contains_low_value_data=self._detect_low_value_data(response),
-                        has_verbose_identifiers=self._detect_verbose_identifiers(
-                            response
-                        ),
-                        is_truncated=self._detect_truncation(response),
+                    measurements.append(
+                        ResponseMetric(
+                            scenario=scenario.name,
+                            token_count=token_count,
+                            response_time=end_time - start_time,
+                            response_size_bytes=response_size,
+                            contains_low_value_data=self._detect_low_value_data(
+                                response
+                            ),
+                            has_verbose_identifiers=self._detect_verbose_identifiers(
+                                response
+                            ),
+                            is_truncated=self._detect_truncation(response),
+                        )
                     )
-                )
 
-                logger.debug(
-                    f"Tool {tool_name} scenario {scenario.name}: {token_count} tokens"
-                )
+                    logger.debug(
+                        f"Tool {tool_name} scenario {scenario.name}: {token_count} tokens"
+                    )
+                else:
+                    # All attempts failed; record error
+                    err_msg = str(last_error) if last_error else "Unknown error"
+                    measurements.append(
+                        ResponseMetric(
+                            scenario=scenario.name,
+                            token_count=0,
+                            response_time=end_time - start_time,
+                            response_size_bytes=0,
+                            contains_low_value_data=False,
+                            has_verbose_identifiers=False,
+                            error=err_msg,
+                        )
+                    )
+                    logger.warning(
+                        f"Failed to execute {tool_name} with scenario {scenario.name}: {err_msg}"
+                    )
 
             except Exception as e:
                 measurements.append(
@@ -431,6 +500,219 @@ class TokenEfficiencyChecker:
             max_tokens=max_tokens,
             min_tokens=min_tokens,
         )
+
+    def _extract_error_from_response(self, response: Any) -> Optional[str]:
+        """Best-effort extraction of error info from a result object.
+
+        Some servers may return error-like payloads without raising exceptions.
+        This inspects common shapes to detect and surface them.
+        """
+        try:
+            # Direct error field
+            if isinstance(response, dict):
+                if "error" in response and isinstance(response["error"], (str, dict)):
+                    err = response["error"]
+                    return err if isinstance(err, str) else json.dumps(err)
+                # JSON-RPC-like shape
+                if all(k in response for k in ("code", "message")):
+                    code = response.get("code")
+                    msg = response.get("message")
+                    return f"code={code} message={msg}"
+            # Sometimes wrapped in { result: { error: ... } }
+            if (
+                isinstance(response, dict)
+                and isinstance(response.get("result"), dict)
+                and "error" in response["result"]
+            ):
+                err = response["result"]["error"]
+                return err if isinstance(err, str) else json.dumps(err)
+        except Exception:
+            pass
+        return None
+
+    async def _generate_llm_test_scenarios(
+        self, tool: Any
+    ) -> List[EvaluationScenario]:
+        """Generate test scenarios using an LLM, with static fallback on failure."""
+        if self._llm_client is None:
+            raise RuntimeError("LLM client not initialized")
+
+        tool_name = getattr(tool, "name", "unknown_tool")
+        description = getattr(tool, "description", "") or ""
+        schema = getattr(tool, "input_schema", None) or getattr(tool, "parameters", None) or {}
+
+        prompt = (
+            "You help construct realistic test arguments for an MCP tool. "
+            "Return a JSON array with 2-3 scenarios. Each item must be an object with: "
+            "'name' (minimal|typical|large), 'params' (object of arguments), and 'description' (string). "
+            "Ensure 'params' conforms to the schema. Prefer concise, valid values.\n\n"
+            f"Tool name: {tool_name}\n"
+            f"Tool description: {description}\n"
+            f"Tool schema (JSON): {json.dumps(schema, ensure_ascii=False)}\n\n"
+            "Output JSON only, no markdown fences."
+        )
+
+        raw = await self._llm_client.complete(prompt)  # type: ignore[attr-defined]
+        text = raw.strip()
+        if text.startswith("```") or text.lower().startswith("```json"):
+            text = text.strip("` ")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+
+        data = json.loads(text)
+        if not isinstance(data, list) or not data:
+            raise ValueError("LLM scenarios not a non-empty array")
+
+        scenarios: List[EvaluationScenario] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "scenario"))
+            params = item.get("params")
+            desc = str(item.get("description", ""))
+            if isinstance(params, dict):
+                scenarios.append(
+                    EvaluationScenario(name=name, params=params, description=desc)
+                )
+        if not scenarios:
+            raise ValueError("LLM scenarios contained no valid entries")
+        return scenarios
+
+    def _try_schema_based_param_repair(
+        self, tool: Any, params: Dict[str, Any], error_text: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Quick, deterministic repair using schema and server error hints.
+
+        - Fix invalid enum values when options are provided in error
+        - Add/fix required fields with sample values
+        - Attempt simple type coercions
+        """
+        try:
+            input_schema = getattr(tool, "input_schema", None) or getattr(
+                tool, "parameters", None
+            )
+            if not isinstance(input_schema, dict):
+                return None
+
+            properties = input_schema.get("properties", {}) or {}
+            required = set(input_schema.get("required", []) or [])
+
+            repaired = dict(params)
+            changed = False
+
+            # 1) Parse enum error blocks: look for an options list and a path field
+            # The error often includes a JSON array with objects containing
+            #   { "received": "...", "code": "invalid_enum_value", "options": [...], "path": ["field"] }
+            enum_field = None
+            enum_options: Optional[List[str]] = None
+
+            # Extract a JSON-like list from the error string if present
+            import json as _json
+            import re as _re
+
+            try:
+                # Heuristic: capture the last [...] block in the error
+                blocks = list(_re.finditer(r"\[(?:.|\n)*?\]", error_text))
+                if blocks:
+                    candidate = blocks[-1].group(0)
+                    data = _json.loads(candidate)
+                    if isinstance(data, list):
+                        for item in data:
+                            if (
+                                isinstance(item, dict)
+                                and item.get("code") == "invalid_enum_value"
+                                and isinstance(item.get("options"), list)
+                            ):
+                                enum_options = [str(o) for o in item.get("options", [])]
+                                path = item.get("path")
+                                if isinstance(path, list) and path:
+                                    enum_field = str(path[-1])
+                                break
+            except Exception:
+                pass
+
+            if enum_field and enum_options:
+                if enum_field in properties:
+                    if repaired.get(enum_field) not in enum_options:
+                        repaired[enum_field] = enum_options[0]
+                        changed = True
+
+            # 2) Ensure required fields exist (fill with sample values)
+            for field in required:
+                if field not in repaired and field in properties:
+                    repaired[field] = self._generate_sample_value(field, properties[field])
+                    changed = True
+
+            # 3) Simple type coercions using schema type when obvious
+            for field, schema in properties.items():
+                if field not in repaired:
+                    continue
+                expected_type = schema.get("type")
+                value = repaired[field]
+                try:
+                    if expected_type == "integer" and isinstance(value, str) and value.isdigit():
+                        repaired[field] = int(value)
+                        changed = True
+                    elif expected_type == "number" and isinstance(value, str):
+                        repaired[field] = float(value)
+                        changed = True
+                    elif expected_type == "boolean" and isinstance(value, str):
+                        if value.lower() in {"true", "false"}:
+                            repaired[field] = value.lower() == "true"
+                            changed = True
+                except Exception:
+                    # Ignore coercion errors
+                    pass
+
+            return repaired if changed else None
+        except Exception:
+            return None
+
+    async def _try_llm_param_repair(
+        self, tool: Any, params: Dict[str, Any], error_text: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Use an LLM to suggest corrected parameters, constrained to tool schema.
+        Returns a new params dict or None if unusable.
+        """
+        if self._llm_client is None:
+            return None
+
+        tool_name = getattr(tool, "name", "unknown_tool")
+        description = getattr(tool, "description", "") or ""
+        schema = getattr(tool, "input_schema", None) or getattr(tool, "parameters", None) or {}
+
+        prompt = (
+            "You are assisting an MCP client to call a tool. "
+            "The previous call failed due to invalid arguments. "
+            "Given the tool schema and the error message, return ONLY a valid JSON object with corrected arguments. "
+            "Do not include markdown fences or any text other than the JSON object.\n\n"
+            f"Tool name: {tool_name}\n"
+            f"Tool description: {description}\n"
+            f"Tool schema (JSON): {json.dumps(schema, ensure_ascii=False)}\n\n"
+            f"Previous arguments (JSON): {json.dumps(params, ensure_ascii=False)}\n\n"
+            f"Error message: {error_text}\n\n"
+            "Return a minimal, valid argument object conforming to the schema."
+        )
+
+        try:
+            raw = await self._llm_client.complete(prompt)  # type: ignore[attr-defined]
+            # Extract JSON object
+            repaired_text = raw.strip()
+            # Some models might wrap in code fences; strip them naively
+            if repaired_text.startswith("```"):
+                repaired_text = repaired_text.strip("` ")
+                # Remove possible leading language tag
+                if repaired_text.startswith("json"):
+                    repaired_text = repaired_text[4:].strip()
+            repaired = json.loads(repaired_text)
+            if isinstance(repaired, dict):
+                return repaired
+        except Exception:
+            return None
+
+        return None
 
     def _analyze_response_metrics(
         self, metrics: ResponseMetrics
