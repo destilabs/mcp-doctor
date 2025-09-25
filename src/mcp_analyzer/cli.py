@@ -6,10 +6,16 @@ import os
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from .checkers import (
     DescriptionChecker,
@@ -131,6 +137,28 @@ def analyze(
         "--no-env-logging",
         help="Disable environment variable logging for security",
     ),
+    limit_tools: Optional[int] = typer.Option(
+        None,
+        "--limit-tools",
+        min=1,
+        help="Limit the number of tools to analyze (debugging)",
+    ),
+    show_tool_calls: bool = typer.Option(
+        False,
+        "--show-tool-calls",
+        help="Pretty print per-tool LLM tool calls for debugging",
+    ),
+    http_header: Optional[List[str]] = typer.Option(
+        None,
+        "--http-header",
+        "-H",
+        help="HTTP header in 'Name: value' or 'Name=value' format (repeatable)",
+    ),
+    http_headers: Optional[str] = typer.Option(
+        None,
+        "--http-headers",
+        help="HTTP headers as JSON object"
+    ),
 ) -> None:
     """
     Diagnose an MCP server for agent-friendliness and best practices compliance.
@@ -184,13 +212,46 @@ def analyze(
         if no_env_logging:
             npx_kwargs["log_env_vars"] = False
 
+        forwarded_kwargs = dict(npx_kwargs)
+        # Collect HTTP headers for HTTP/SSE transport
+        headers: Dict[str, str] = {}
+        if http_headers:
+            try:
+                parsed = json.loads(http_headers)
+                if isinstance(parsed, dict):
+                    headers.update({str(k): str(v) for k, v in parsed.items()})
+                else:
+                    raise ValueError("--http-headers must be a JSON object")
+            except json.JSONDecodeError as exc:
+                console.print(f"[red]❌ Invalid JSON in --http-headers: {exc}[/red]")
+                raise typer.Exit(1)
+        if http_header:
+            for item in http_header:
+                if ":" in item:
+                    key, value = item.split(":", 1)
+                elif "=" in item:
+                    key, value = item.split("=", 1)
+                else:
+                    console.print(
+                        f"[red]❌ Invalid header format: {item!r}. Use 'Name: value' or 'Name=value'.[/red]"
+                    )
+                    raise typer.Exit(1)
+                headers[key.strip()] = value.strip()
+        if headers:
+            forwarded_kwargs["__http_headers__"] = headers
+        if limit_tools is not None:
+            # Pass internally via a private key to avoid changing the function signature
+            forwarded_kwargs["__limit_tools__"] = limit_tools
+        if show_tool_calls:
+            forwarded_kwargs["__show_tool_calls__"] = True
+
         result = asyncio.run(
             _run_analysis(
                 target,
                 check,
                 timeout,
                 verbose,
-                npx_kwargs,
+                forwarded_kwargs,
             )
         )
 
@@ -214,7 +275,17 @@ async def _run_analysis(
     if npx_kwargs is None:
         npx_kwargs = {}
 
-    client = MCPClient(target, timeout=timeout, **npx_kwargs)
+    # Extract internal analysis options (do not forward to MCP client)
+    limit_tools: Optional[int] = None
+    show_tool_calls: bool = bool(npx_kwargs.pop("__show_tool_calls__", False))
+    http_headers: Dict[str, str] = dict(npx_kwargs.pop("__http_headers__", {}) or {})
+    if "__limit_tools__" in npx_kwargs:
+        try:
+            limit_tools = int(npx_kwargs.pop("__limit_tools__") or 0) or None
+        except Exception:
+            limit_tools = None
+
+    client = MCPClient(target, timeout=timeout, http_headers=http_headers, **npx_kwargs)
 
     is_npx = is_npx_command(target)
 
@@ -234,13 +305,20 @@ async def _run_analysis(
 
         actual_url = target
 
-    console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
+    total_tools = len(tools)
+    if limit_tools is not None and limit_tools < total_tools:
+        console.print(
+            f"🔬 Limiting analysis to [bold]{limit_tools}[/bold] of [bold]{total_tools}[/bold] tools"
+        )
+        tools = tools[:limit_tools]
+    console.print(f"✅ Connected! Found [bold]{total_tools}[/bold] tools\n")
 
     results: Dict[str, Any] = {
         "server_target": target,
         "server_url": actual_url,
         "server_info": server_info,
-        "tools_count": len(tools),
+        "tools_count": total_tools,
+        "tools_analyzed_count": len(tools),
         "is_npx_server": is_npx,
         "checks": {},
     }
@@ -254,12 +332,82 @@ async def _run_analysis(
                 results["checks"]["descriptions"] = description_results
 
         if check in {CheckType.token_efficiency, CheckType.all}:
-            with console.status("[bold green]Analyzing token efficiency..."):
-                efficiency_checker = TokenEfficiencyChecker()
-                efficiency_results = await efficiency_checker.analyze_token_efficiency(
-                    tools, client
+            efficiency_checker = TokenEfficiencyChecker()
+
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(bar_width=None),
+                TextColumn(" {task.completed}/{task.total}"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                tools_task = progress.add_task(
+                    "Analyzing token efficiency (tools)", total=len(tools)
                 )
+                runs_task = progress.add_task(
+                    "Current tool runs", total=efficiency_checker.sample_requests_per_tool, visible=False
+                )
+
+                debug_tool_calls: Dict[str, list[Dict[str, Any]]] = {}
+
+                def on_progress(event: str, payload: Dict[str, Any]) -> None:  # type: ignore[override]
+                    if event == "start":
+                        progress.update(tools_task, completed=0, total=payload.get("total_tools", len(tools)))
+                    elif event == "tool_start":
+                        name = payload.get("tool_name", "tool")
+                        progress.update(runs_task, total=efficiency_checker.sample_requests_per_tool, completed=0, visible=True, description=f"Runs for {name}")
+                    elif event == "chat_run_start":
+                        name = payload.get("tool_name", "tool")
+                        idx = payload.get("run_index", 1)
+                        progress.update(runs_task, description=f"{name}: run {idx}/{efficiency_checker.sample_requests_per_tool}")
+                    elif event == "chat_run_complete":
+                        progress.advance(runs_task, 1)
+                        if show_tool_calls and "tool_calls" in payload:
+                            name = payload.get("tool_name", "tool")
+                            calls_entry = {
+                                "run_index": payload.get("run_index"),
+                                "token_count": payload.get("token_count"),
+                                "response_size_bytes": payload.get("response_size_bytes"),
+                                "tool_calls": payload.get("tool_calls"),
+                            }
+                            debug_tool_calls.setdefault(name, []).append(calls_entry)
+                    elif event == "tool_complete":
+                        progress.advance(tools_task, 1)
+                        progress.update(runs_task, visible=False)
+                    elif event == "end":
+                        # Ensure bars are full
+                        progress.update(tools_task, completed=progress.tasks[tools_task].total)
+
+                try:
+                    efficiency_results = await efficiency_checker.analyze_token_efficiency(
+                        tools, client, on_progress=on_progress
+                    )
+                except TypeError:
+                    # Backward compatibility with older or test doubles
+                    efficiency_results = await efficiency_checker.analyze_token_efficiency(
+                        tools, client
+                    )
                 results["checks"]["token_efficiency"] = efficiency_results
+
+                # Pretty-print tool call debug if requested
+                if show_tool_calls and debug_tool_calls:
+                    console.print("\n[bold yellow]🔎 Tool Call Debug[/bold yellow]")
+                    for tool_name, runs in debug_tool_calls.items():
+                        console.print(f"[cyan]{tool_name}[/cyan]")
+                        for run in runs:
+                            console.print(
+                                json.dumps(
+                                    {
+                                        "run_index": run.get("run_index"),
+                                        "token_count": run.get("token_count"),
+                                        "response_size_bytes": run.get("response_size_bytes"),
+                                        "tool_calls": run.get("tool_calls"),
+                                    },
+                                    ensure_ascii=False,
+                                    indent=2,
+                                )
+                            )
 
         if check in {CheckType.security, CheckType.all}:
             with console.status("[bold green]Running security audit..."):

@@ -1,8 +1,15 @@
-"""MCP server client for fetching tool information."""
+"""MCP server client for fetching tool information.
+
+This module also provides an LLM-driven per-tool chat execution helper that
+lets a model call a single MCP tool via the Messages API (Anthropic-compatible).
+"""
 
 import asyncio
+import json
 import logging
-from typing import Any, Dict, List, Optional, cast
+import os
+import random
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -32,6 +39,15 @@ class MCPTool(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
 
 
+class LLMToolCall(BaseModel):
+    """Record of a tool call initiated by an LLM."""
+
+    id: str
+    name: str
+    input: Dict[str, Any]
+    result: Optional[Any] = None
+
+
 class MCPClientError(Exception):
     """Custom exception for MCP client errors."""
 
@@ -46,6 +62,8 @@ class MCPClient:
         server_target: str,
         timeout: int = 30,
         transport: str = "auto",
+        *,
+        http_headers: Optional[Dict[str, str]] = None,
         **npx_kwargs: Any,
     ) -> None:
         """
@@ -66,6 +84,7 @@ class MCPClient:
         self._sse_client: Optional[MCPSSEClient] = None
         self._is_npx_server = is_npx_command(server_target)
         self._actual_server_url: Optional[str] = None
+        self._http_headers: Dict[str, str] = dict(http_headers or {})
 
         self._transport = self._detect_transport_type(transport)
 
@@ -244,7 +263,7 @@ class MCPClient:
 
                     try:
                         self._sse_client = MCPSSEClient(
-                            self.server_target, timeout=self.timeout
+                            self.server_target, timeout=self.timeout, headers=self._http_headers
                         )
                         await self._sse_client.__aenter__()
                         logger.info(
@@ -561,6 +580,305 @@ class MCPClient:
             if isinstance(e, MCPClientError):
                 raise
             raise MCPClientError(f"Failed to call tool {tool_name}: {e}")
+
+    # ------------------------------
+    # LLM-driven per-tool chat logic
+    # ------------------------------
+
+    async def _generate_sample_message_for_tool(self, tool: MCPTool) -> str:
+        """Generate a concise sample user message for a tool using any available LLM.
+
+        Falls back to a deterministic prompt if no LLM provider is configured.
+        """
+        try:
+            # Reuse the dataset generator's provider resolution to keep dependency surface small
+            from .dataset_generator import (
+                AnthropicClient as _AnthropicTextClient,
+                OpenAIClient as _OpenAITextClient,
+                resolve_provider as _resolve_provider,
+                ModelProvider as _ModelProvider,
+            )
+
+            provider = _resolve_provider()
+            prompt = (
+                "Generate a single concise user request (max 30 words) that would "
+                "cause an AI assistant to use the following MCP tool. "
+                "Output only the user message, no commentary.\n\n" 
+                f"Tool name: {tool.name}\n"
+                f"Description: {tool.description or 'No description'}\n"
+                f"Parameters (JSON): {json.dumps(tool.parameters or tool.input_schema or {}, ensure_ascii=False)}"
+            )
+
+            if provider.provider == _ModelProvider.ANTHROPIC:
+                client = _AnthropicTextClient(provider.api_key, provider.model)
+            else:
+                client = _OpenAITextClient(provider.api_key, provider.model)
+
+            try:
+                text = await client.complete(prompt)
+            except Exception:
+                # Fall back if LLM call fails
+                text = f"Please use the tool '{tool.name}' to perform a typical operation."
+            return text.strip() or f"Use the '{tool.name}' tool for a common task."
+        except Exception:
+            # If no LLM keys are configured, return a deterministic generic prompt
+            return f"Use the '{tool.name}' tool for a common task."
+
+    @staticmethod
+    def _normalize_tool_schema(tool: MCPTool) -> Dict[str, Any]:
+        """Ensure we always pass a valid JSON schema to the LLM tools interface."""
+        schema = tool.input_schema or tool.parameters
+        if isinstance(schema, dict) and schema:
+            return schema
+        # Minimal permissive schema
+        return {"type": "object", "properties": {}, "additionalProperties": True}
+
+    @staticmethod
+    def _anthropic_headers(api_key: str) -> Dict[str, str]:
+        version = os.getenv("ANTHROPIC_API_VERSION", "2023-06-01")
+        return {
+            "x-api-key": api_key,
+            "anthropic-version": version,
+            "content-type": "application/json",
+        }
+
+    @staticmethod
+    def _normalize_tool_result_content(result: Any) -> List[Dict[str, Any]]:
+        """Convert MCP tool result into Anthropic tool_result content blocks."""
+        # If server already returned MCP-style content blocks, pass them through
+        if isinstance(result, dict):
+            content = result.get("content")
+            if isinstance(content, list) and all(isinstance(c, dict) for c in content):
+                return content  # Assume already in [{type: 'text', text: ...}] format
+
+        # Otherwise stringify conservatively
+        if isinstance(result, (str, int, float, bool)):
+            text = str(result)
+        else:
+            try:
+                text = json.dumps(result, ensure_ascii=False)
+            except Exception:
+                text = str(result)
+        return [{"type": "text", "text": text}]
+
+    async def process_query_for_tool(
+        self,
+        tool: MCPTool,
+        *,
+        model: Optional[str] = None,
+        max_tokens: int = 1000,
+        system: Optional[str] = None,
+    ) -> Tuple[str, List[LLMToolCall]]:
+        """Run an LLM chat for a single tool and return response and tool calls.
+
+        Logic (inspired by typical `process_query` flows):
+        - Generate a sample user message with AI
+        - Provide only the specified tool to the LLM
+        - Execute any requested tool calls via this MCP client
+        - Return the assistant's final text and the tool call records
+
+        Requirements:
+        - Requires `ANTHROPIC_API_KEY` in environment.
+        - Uses Anthropic Messages HTTP API directly (no SDK dependency).
+        """
+        await self._ensure_server_ready()
+
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise MCPClientError(
+                "ANTHROPIC_API_KEY is required to run LLM-driven tool chats"
+            )
+
+        base_url = os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
+        model = model or os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+
+        sample_user = await self._generate_sample_message_for_tool(tool)
+        messages: List[Dict[str, Any]] = [{"role": "user", "content": sample_user}]
+        if system:
+            # Anthropic supports a system prompt via top-level field in payload
+            system_prompt = system
+        else:
+            system_prompt = None
+
+        tools_payload = [
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": self._normalize_tool_schema(tool),
+            }
+        ]
+
+        headers = self._anthropic_headers(api_key)
+
+        async def _create(payload: Dict[str, Any]) -> Dict[str, Any]:
+            retriable_statuses = {408, 409, 429, 500, 502, 503, 504, 522, 524, 529}
+            base_delay = float(os.getenv("MCP_DOCTOR_LLM_BACKOFF_BASE", "0.5"))
+            max_attempts = int(os.getenv("MCP_DOCTOR_LLM_BACKOFF_ATTEMPTS", "5"))
+            attempt = 0
+
+            last_error_text = None
+            last_status = None
+
+            while True:
+                attempt += 1
+                try:
+                    async with httpx.AsyncClient(
+                        base_url=base_url, timeout=self.timeout
+                    ) as client:
+                        resp = await client.post(
+                            "/v1/messages", headers=headers, json=payload
+                        )
+
+                        if resp.status_code in retriable_statuses:
+                            last_status = resp.status_code
+                            try:
+                                last_error_text = (await resp.aread()).decode()
+                            except Exception:
+                                try:
+                                    last_error_text = resp.text
+                                except Exception:
+                                    last_error_text = "<unreadable>"
+
+                            # Respect Retry-After if present
+                            retry_after = resp.headers.get("retry-after")
+                            if retry_after:
+                                try:
+                                    delay = max(float(retry_after), base_delay)
+                                except ValueError:
+                                    delay = base_delay
+                            else:
+                                delay = base_delay * (2 ** (attempt - 1))
+                                # Add small jitter
+                                delay += random.uniform(0, 0.25)
+
+                            logger.warning(
+                                "Anthropic API transient error %s (attempt %s/%s). Retrying in %.2fs", 
+                                resp.status_code, attempt, max_attempts, delay,
+                            )
+
+                            if attempt >= max_attempts:
+                                break
+                            await asyncio.sleep(delay)
+                            continue
+
+                        # For non-retriable statuses raise
+                        try:
+                            resp.raise_for_status()
+                        except httpx.HTTPStatusError as exc:  # pragma: no cover - network wrapper
+                            err_text = exc.response.text[:200] if exc.response is not None else ""
+                            raise MCPClientError(
+                                f"Anthropic API error: {exc.response.status_code} {err_text}"
+                            ) from exc
+
+                        data = resp.json()
+                        # If API returns a JSON error envelope with success status (unlikely), surface it
+                        if isinstance(data, dict) and data.get("type") == "error":
+                            err = data.get("error", {})
+                            message = err.get("message", "Unknown error") if isinstance(err, dict) else str(err)
+                            raise MCPClientError(f"Anthropic API returned error payload: {message}")
+
+                        return data
+
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    # Network issues - backoff and retry
+                    last_error_text = str(exc)
+                    if attempt >= max_attempts:
+                        break
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+                    logger.warning(
+                        "Anthropic API network error (attempt %s/%s). Retrying in %.2fs: %s",
+                        attempt,
+                        max_attempts,
+                        delay,
+                        exc,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+            # If we exit the loop without returning, we exhausted retries
+            status_part = f"{last_status} " if last_status is not None else ""
+            snippet = (last_error_text or "").strip()[:200]
+            raise MCPClientError(
+                f"Anthropic API error: {status_part}{snippet or 'request failed after retries'}"
+            )
+
+        final_text_parts: List[str] = []
+        tool_calls: List[LLMToolCall] = []
+        loop_guard = 0
+
+        while True:
+            loop_guard += 1
+            if loop_guard > 5:
+                # Avoid infinite loops if a model keeps requesting tools
+                break
+
+            payload: Dict[str, Any] = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": messages,
+                "tools": tools_payload,
+            }
+            if system_prompt:
+                payload["system"] = system_prompt
+
+            response = await _create(payload)
+            content = response.get("content", [])
+
+            # Collect assistant content to thread history
+            assistant_blocks: List[Dict[str, Any]] = []
+            pending_tool_uses: List[Dict[str, Any]] = []
+
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
+                    text = block.get("text")
+                    if isinstance(text, str) and text:
+                        final_text_parts.append(text)
+                        assistant_blocks.append({"type": "text", "text": text})
+                elif btype == "tool_use":
+                    # Accumulate for execution
+                    pending_tool_uses.append(block)
+                    assistant_blocks.append(block)
+
+            # Always append assistant's message to history
+            if assistant_blocks:
+                messages.append({"role": "assistant", "content": assistant_blocks})
+
+            # If no tool requests, we are done
+            if not pending_tool_uses:
+                break
+
+            # Execute each requested tool call and append tool_result blocks
+            tool_result_blocks: List[Dict[str, Any]] = []
+            for tu in pending_tool_uses:
+                tu_id = tu.get("id") or ""
+                tu_name = tu.get("name") or tool.name
+                tu_input = cast(Dict[str, Any], tu.get("input") or {})
+
+                try:
+                    exec_result = await self.call_tool(tu_name, tu_input)
+                except Exception as exec_err:  # pragma: no cover - thin wrapper
+                    exec_result = {"error": str(exec_err)}
+
+                tool_calls.append(
+                    LLMToolCall(id=str(tu_id), name=str(tu_name), input=tu_input, result=exec_result)
+                )
+
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu_id,
+                        "content": self._normalize_tool_result_content(exec_result),
+                    }
+                )
+
+            # Append aggregated tool results as a single user message
+            if tool_result_blocks:
+                messages.append({"role": "user", "content": tool_result_blocks})
+
+        return ("\n".join(final_text_parts).strip(), tool_calls)
 
     async def close(self) -> None:
         """Close connections and stop servers."""

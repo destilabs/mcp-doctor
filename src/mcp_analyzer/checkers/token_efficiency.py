@@ -6,7 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,10 @@ class TokenEfficiencyChecker:
         ]
 
     async def analyze_token_efficiency(
-        self, tools: List[Any], mcp_client: Any
+        self,
+        tools: List[Any],
+        mcp_client: Any,
+        on_progress: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """
         Analyze tools for token efficiency issues.
@@ -159,6 +162,11 @@ class TokenEfficiencyChecker:
             Dictionary with analysis results
         """
         logger.info(f"Starting token efficiency analysis for {len(tools)} tools")
+        if on_progress:
+            on_progress(
+                "start",
+                {"total_tools": len(tools)},
+            )
 
         issues = []
         tool_metrics = []
@@ -174,21 +182,38 @@ class TokenEfficiencyChecker:
             "tools_exceeding_limit": 0,
         }
 
-        for tool in tools:
+        for index, tool in enumerate(tools, start=1):
             try:
+                tool_name = getattr(tool, "name", "unknown")
+                if on_progress:
+                    on_progress(
+                        "tool_start",
+                        {"tool_name": tool_name, "index": index, "total_tools": len(tools)},
+                    )
                 # Static analysis (schema-based)
                 static_issues = self._analyze_tool_schema(tool)
                 issues.extend(static_issues)
 
                 # Dynamic analysis (execution-based)
                 try:
-                    metrics = await self._measure_response_sizes(tool, mcp_client)
+                    metrics = await self._measure_response_sizes(
+                        tool, mcp_client, on_progress=on_progress
+                    )
                     tool_metrics.append(metrics)
 
                     dynamic_issues = self._analyze_response_metrics(metrics)
                     issues.extend(dynamic_issues)
 
                     stats["tools_analyzed"] += 1
+                    if on_progress:
+                        on_progress(
+                            "tool_complete",
+                            {"tool_name": tool_name, "metrics": {
+                                "avg_tokens": metrics.avg_tokens,
+                                "max_tokens": metrics.max_tokens,
+                                "min_tokens": metrics.min_tokens,
+                            }},
+                        )
 
                 except Exception as e:
                     logger.warning(
@@ -234,12 +259,15 @@ class TokenEfficiencyChecker:
 
         stats["tools_with_issues"] = len(tools_with_issues)
 
-        return {
+        result = {
             "issues": issues,
             "tool_metrics": tool_metrics,
             "statistics": stats,
             "recommendations": self._generate_recommendations(issues, stats),
         }
+        if on_progress:
+            on_progress("end", {"summary": stats})
+        return result
 
     def _analyze_tool_schema(self, tool: Any) -> List[TokenEfficiencyIssue]:
         """Analyze tool schema for potential token efficiency issues."""
@@ -357,51 +385,104 @@ class TokenEfficiencyChecker:
         return issues
 
     async def _measure_response_sizes(
-        self, tool: Any, mcp_client: Any
+        self,
+        tool: Any,
+        mcp_client: Any,
+        *,
+        on_progress: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> ResponseMetrics:
-        """Execute sample tool calls and measure response token counts."""
+        """Execute LLM-driven chat for a tool and measure token counts.
+
+        This fully replaces prior direct tool invocation and instead:
+        - Generates an AI sample user message
+        - Exposes only the specified tool to the LLM
+        - Executes tool_use calls through the MCP client
+        - Measures combined size of the assistant reply and tool call results
+        """
         tool_name = getattr(tool, "name", "unknown_tool")
-        logger.debug(f"Measuring response sizes for tool: {tool_name}")
+        logger.debug(f"Measuring response sizes for tool (LLM chat): {tool_name}")
 
-        # Generate test scenarios
-        test_scenarios = self._generate_test_scenarios(tool)
+        measurements: List[ResponseMetric] = []
 
-        measurements = []
-        for scenario in test_scenarios:
+        # Perform several chat-based runs to sample variability
+        for i in range(self.sample_requests_per_tool):
+            scenario_name = f"chat_run_{i+1}"
             try:
                 start_time = time.time()
 
-                # Execute tool call
-                response = await mcp_client.call_tool(tool_name, scenario.params)
+                if on_progress:
+                    on_progress(
+                        "chat_run_start",
+                        {"tool_name": tool_name, "run_index": i + 1, "runs_total": self.sample_requests_per_tool},
+                    )
+
+                assistant_text, tool_calls = await mcp_client.process_query_for_tool(
+                    tool
+                )
 
                 end_time = time.time()
 
-                # Analyze response
-                token_count = self._estimate_token_count(response)
-                response_size = len(json.dumps(response, ensure_ascii=False))
+                # Build a combined artifact for measurement
+                combined = {
+                    "assistant_text": assistant_text,
+                    "tool_calls": [
+                        {"name": getattr(tc, "name", ""), "result": getattr(tc, "result", None)}
+                        for tc in (tool_calls or [])
+                    ],
+                }
+
+                token_count = self._estimate_token_count(combined)
+                response_size = len(json.dumps(combined, ensure_ascii=False))
 
                 measurements.append(
                     ResponseMetric(
-                        scenario=scenario.name,
+                        scenario=scenario_name,
                         token_count=token_count,
                         response_time=end_time - start_time,
                         response_size_bytes=response_size,
-                        contains_low_value_data=self._detect_low_value_data(response),
+                        contains_low_value_data=self._detect_low_value_data(combined),
                         has_verbose_identifiers=self._detect_verbose_identifiers(
-                            response
+                            combined
                         ),
-                        is_truncated=self._detect_truncation(response),
+                        is_truncated=self._detect_truncation(combined),
                     )
                 )
 
                 logger.debug(
-                    f"Tool {tool_name} scenario {scenario.name}: {token_count} tokens"
+                    f"Tool {tool_name} {scenario_name}: {token_count} tokens"
                 )
+
+                if on_progress:
+                    # Serialize tool call objects for debugging/pretty print
+                    serialized_calls = []
+                    try:
+                        for tc in (tool_calls or []):
+                            serialized_calls.append(
+                                {
+                                    "id": getattr(tc, "id", None),
+                                    "name": getattr(tc, "name", None),
+                                    "input": getattr(tc, "input", None),
+                                    "result": getattr(tc, "result", None),
+                                }
+                            )
+                    except Exception:
+                        serialized_calls = []
+
+                    on_progress(
+                        "chat_run_complete",
+                        {
+                            "tool_name": tool_name,
+                            "run_index": i + 1,
+                            "token_count": token_count,
+                            "response_size_bytes": response_size,
+                            "tool_calls": serialized_calls,
+                        },
+                    )
 
             except Exception as e:
                 measurements.append(
                     ResponseMetric(
-                        scenario=scenario.name,
+                        scenario=scenario_name,
                         token_count=0,
                         response_time=0,
                         response_size_bytes=0,
@@ -411,8 +492,17 @@ class TokenEfficiencyChecker:
                     )
                 )
                 logger.warning(
-                    f"Failed to execute {tool_name} with scenario {scenario.name}: {e}"
+                    f"Failed to execute LLM chat for {tool_name} in {scenario_name}: {e}"
                 )
+                if on_progress:
+                    on_progress(
+                        "chat_run_complete",
+                        {
+                            "tool_name": tool_name,
+                            "run_index": i + 1,
+                            "error": str(e),
+                        },
+                    )
 
         # Calculate aggregate metrics
         valid_measurements = [m for m in measurements if m.token_count > 0]
