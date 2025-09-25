@@ -46,6 +46,7 @@ class MCPClient:
         server_target: str,
         timeout: int = 30,
         transport: str = "auto",
+        headers: Optional[Dict[str, str]] = None,
         **npx_kwargs: Any,
     ) -> None:
         """
@@ -66,6 +67,7 @@ class MCPClient:
         self._sse_client: Optional[MCPSSEClient] = None
         self._is_npx_server = is_npx_command(server_target)
         self._actual_server_url: Optional[str] = None
+        self._headers: Dict[str, str] = dict(headers or {})
 
         self._transport = self._detect_transport_type(transport)
 
@@ -90,7 +92,7 @@ class MCPClient:
         try:
             logger.info(f"Probing endpoint type for: {url}")
 
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, headers=self._headers) as client:
                 try:
                     head_response = await client.head(url)
                     if head_response.status_code == 406:
@@ -147,7 +149,7 @@ class MCPClient:
 
             info_paths = ["/", "/info", "/status", "/health"]
 
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, headers=self._headers) as client:
                 for path in info_paths:
                     try:
                         test_url = f"{base_url}{path}"
@@ -190,7 +192,7 @@ class MCPClient:
         await self._ensure_server_ready()
 
         if self._transport == "http":
-            self._session = httpx.AsyncClient(timeout=self.timeout)
+            self._session = httpx.AsyncClient(timeout=self.timeout, headers=self._headers)
 
         return self
 
@@ -208,7 +210,7 @@ class MCPClient:
     async def _get_session(self) -> httpx.AsyncClient:
         """Get or create HTTP session."""
         if not self._session:
-            self._session = httpx.AsyncClient(timeout=self.timeout)
+            self._session = httpx.AsyncClient(timeout=self.timeout, headers=self._headers)
         return self._session
 
     async def _ensure_server_ready(self) -> None:
@@ -244,7 +246,7 @@ class MCPClient:
 
                     try:
                         self._sse_client = MCPSSEClient(
-                            self.server_target, timeout=self.timeout
+                            self.server_target, timeout=self.timeout, headers=self._headers
                         )
                         await self._sse_client.__aenter__()
                         logger.info(

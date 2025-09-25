@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import typer
 from rich.console import Console
@@ -96,6 +96,46 @@ def _load_and_apply_env_file(
     return env_from_file
 
 
+def _load_overrides_file(path: Path) -> Dict[str, Any]:
+    """Load token-efficiency overrides from JSON or YAML file.
+
+    The expected structure is either:
+      - a mapping of tool_name -> params dict
+      - or {"tools": {tool_name: params}}
+    """
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    content = path.read_text(encoding="utf-8")
+    data: Any
+    if path.suffix.lower() == ".json":
+        data = json.loads(content)
+    else:
+        try:
+            import yaml  # type: ignore
+        except Exception as exc:  # pragma: no cover - dependency may be optional
+            raise RuntimeError(
+                "YAML overrides require PyYAML. Install with: pip install PyYAML"
+            ) from exc
+        data = yaml.safe_load(content)
+
+    if not isinstance(data, dict):
+        raise ValueError("Overrides file must contain a mapping/dict at top level")
+
+    tools_block = data.get("tools") if "tools" in data else data
+    if not isinstance(tools_block, dict):
+        raise ValueError("Overrides must be a mapping of tool names to parameter dicts")
+
+    # Normalize values to dicts
+    normalized: Dict[str, Any] = {}
+    for key, value in tools_block.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"Override for '{key}' must be an object/dict of params")
+        normalized[str(key)] = value
+
+    return normalized
+
+
 @app.command()
 def analyze(
     target: str = typer.Option(
@@ -112,6 +152,11 @@ def analyze(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show detailed output and suggestions"
     ),
+    show_tool_outputs: bool = typer.Option(
+        False,
+        "--show-tool-outputs",
+        help="Print tool call responses during token efficiency analysis",
+    ),
     timeout: int = typer.Option(30, help="Request timeout in seconds"),
     env_vars: Optional[str] = typer.Option(
         None,
@@ -123,6 +168,22 @@ def analyze(
         "--env-file",
         help="Path to a .env file whose values should be injected when running the command",
     ),
+    api_key: Optional[str] = typer.Option(
+        None,
+        "--api-key",
+        help="API key to send as 'x-api-key' header when connecting to HTTP/SSE MCP servers",
+    ),
+    headers_json: Optional[str] = typer.Option(
+        None,
+        "--headers",
+        help="Additional HTTP headers as JSON object (e.g., '{\"Authorization\": \"Bearer ...\"}')",
+    ),
+    header: List[str] = typer.Option(
+        [],
+        "--header",
+        "-H",
+        help="Additional HTTP header (repeatable). Format 'Name: Value' or 'Name=Value'",
+    ),
     working_dir: Optional[str] = typer.Option(
         None, "--working-dir", help="Working directory for NPX command"
     ),
@@ -130,6 +191,16 @@ def analyze(
         False,
         "--no-env-logging",
         help="Disable environment variable logging for security",
+    ),
+    export_html: Optional[Path] = typer.Option(
+        None,
+        "--export-html",
+        help="Path to save the analysis report as HTML (preserves styling)",
+    ),
+    overrides: Optional[Path] = typer.Option(
+        None,
+        "--overrides",
+        help="Path to JSON or YAML file with tool parameter overrides for token efficiency checks",
     ),
 ) -> None:
     """
@@ -167,8 +238,6 @@ def analyze(
         if env_from_file:
             npx_kwargs["env_vars"] = dict(env_from_file)
         if env_vars:
-            import json
-
             try:
                 env_payload = json.loads(env_vars)
             except json.JSONDecodeError as e:
@@ -184,18 +253,86 @@ def analyze(
         if no_env_logging:
             npx_kwargs["log_env_vars"] = False
 
+        # Build headers from options
+        headers_opt: Dict[str, str] = {}
+        if headers_json:
+            try:
+                parsed = json.loads(headers_json)
+                if not isinstance(parsed, dict):
+                    raise ValueError("--headers must be a JSON object mapping header names to values")
+                # Convert all values to strings for httpx
+                headers_opt.update({str(k): str(v) for k, v in parsed.items()})
+            except json.JSONDecodeError as exc:
+                console.print(f"[red]❌ Invalid JSON in --headers: {exc}[/red]")
+                raise typer.Exit(1)
+            except ValueError as exc:
+                console.print(f"[red]❌ {exc}[/red]")
+                raise typer.Exit(1)
+
+        # Parse repeated --header options
+        for hv in header:
+            raw = hv.strip()
+            if not raw:
+                continue
+            key: Optional[str] = None
+            value: Optional[str] = None
+            if ":" in raw:
+                key, value = raw.split(":", 1)
+            elif "=" in raw:
+                key, value = raw.split("=", 1)
+            else:
+                console.print(
+                    f"[yellow]⚠️ Ignoring malformed --header entry (use 'Name: Value' or 'Name=Value'): {hv!r}[/yellow]"
+                )
+                continue
+            key = key.strip()
+            value = value.strip()
+            if not key:
+                console.print(
+                    f"[yellow]⚠️ Ignoring --header with empty name: {hv!r}[/yellow]"
+                )
+                continue
+            headers_opt[key] = value
+
+        # Convenience: --api-key populates x-api-key if not overridden explicitly
+        if api_key and "x-api-key" not in {k.lower(): v for k, v in headers_opt.items()}:
+            headers_opt["x-api-key"] = api_key
+
+        # Load overrides file if provided
+        loaded_overrides: Optional[Dict[str, Any]] = None
+        if overrides:
+            try:
+                loaded_overrides = _load_overrides_file(overrides)
+            except Exception as exc:
+                console.print(f"[red]❌ Failed to load overrides: {exc}[/red]")
+                raise typer.Exit(1)
+
         result = asyncio.run(
             _run_analysis(
                 target,
                 check,
                 timeout,
                 verbose,
+                show_tool_outputs,
+                headers_opt if headers_opt else None,
+                loaded_overrides,
                 npx_kwargs,
             )
         )
 
         formatter = ReportFormatter(output_format.value)
         formatter.display_results(result, verbose)
+
+        if export_html:
+            try:
+                formatter.export_to_html(result, verbose, export_html)
+                console.print(
+                    f"🌐 HTML report saved to [cyan]{export_html}[/cyan]"
+                )
+            except Exception as exc:
+                console.print(
+                    f"[red]❌ Failed to export HTML report: {exc}[/red]"
+                )
 
     except Exception as e:
         console.print(f"[red]❌ Error: {str(e)}[/red]")
@@ -207,6 +344,9 @@ async def _run_analysis(
     check: CheckType,
     timeout: int,
     verbose: bool,
+    show_tool_outputs: bool = False,
+    headers: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, Any]] = None,
     npx_kwargs: Optional[dict] = None,
 ) -> dict:
     """Run the actual analysis logic."""
@@ -214,7 +354,7 @@ async def _run_analysis(
     if npx_kwargs is None:
         npx_kwargs = {}
 
-    client = MCPClient(target, timeout=timeout, **npx_kwargs)
+    client = MCPClient(target, timeout=timeout, headers=headers, **npx_kwargs)
 
     is_npx = is_npx_command(target)
 
@@ -255,7 +395,8 @@ async def _run_analysis(
 
         if check in {CheckType.token_efficiency, CheckType.all}:
             with console.status("[bold green]Analyzing token efficiency..."):
-                efficiency_checker = TokenEfficiencyChecker()
+                efficiency_checker = TokenEfficiencyChecker(overrides=overrides)
+                efficiency_checker.show_tool_outputs = bool(show_tool_outputs)
                 efficiency_results = await efficiency_checker.analyze_token_efficiency(
                     tools, client
                 )
@@ -263,7 +404,11 @@ async def _run_analysis(
 
         if check in {CheckType.security, CheckType.all}:
             with console.status("[bold green]Running security audit..."):
-                security_checker = SecurityChecker(timeout=timeout, verify=False)
+                security_checker = SecurityChecker(
+                    timeout=timeout,
+                    verify=False,
+                    env_vars=npx_kwargs.get("env_vars"),
+                )
                 security_results = await security_checker.analyze(actual_url)
                 results["checks"]["security"] = security_results
 

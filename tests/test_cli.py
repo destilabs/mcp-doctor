@@ -48,12 +48,15 @@ def test_cli_analyze_success(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: False)
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
         fake_run_analysis.called_with = (
             target,
             check,
             timeout,
             verbose,
+            show_tool_outputs,
+            headers,
+            overrides,
             npx_kwargs,
         )
         return {
@@ -89,6 +92,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
         cli.CheckType.descriptions,
         30,
         False,
+        False,
+        None,
+        None,
         {},
     )
     assert DummyFormatter.created is not None
@@ -126,12 +132,15 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: True)
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
         fake_run_analysis.received = (
             target,
             check,
             timeout,
             verbose,
+            show_tool_outputs,
+            headers,
+            overrides,
             npx_kwargs,
         )
         return {
@@ -167,7 +176,7 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     assert result.exit_code == 0
     assert any("NPX Command" in message for message in dummy_console.messages)
     assert fake_run_analysis.received is not None
-    assert fake_run_analysis.received[4] == {
+    assert fake_run_analysis.received[7] == {
         "env_vars": {"TOKEN": "xyz"},
         "working_dir": ".",
         "log_env_vars": False,
@@ -182,7 +191,7 @@ def test_cli_analyze_env_file(monkeypatch, tmp_path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("TOKEN=file\n", encoding="utf-8")
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
         fake_run_analysis.received = npx_kwargs
         return {"server_url": "http://localhost", "tools_count": 0, "checks": {}}
 

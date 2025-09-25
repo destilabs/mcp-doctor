@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+import os
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -62,10 +63,12 @@ class SecurityChecker:
         timeout: int = 10,
         verify: bool = True,
         client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
+        env_vars: Optional[Dict[str, str]] = None,
     ) -> None:
         self.timeout = timeout
         self.verify = verify
         self._client_factory = client_factory
+        self._provided_env_vars = env_vars or {}
 
     async def analyze(self, target: str) -> Dict[str, Any]:
         """Run the full security auditing workflow."""
@@ -74,6 +77,9 @@ class SecurityChecker:
         findings: List[SecurityFinding] = []
 
         findings.extend(self._check_network_exposure(parsed_target))
+
+        # Check for API token usage in environment or target URL
+        findings.extend(self._check_api_token_usage(target, self._provided_env_vars))
 
         summary = self._summarize(findings)
 
@@ -184,6 +190,108 @@ class SecurityChecker:
                         recommendation="Ensure firewall and network ACLs restrict unnecessary access",
                     )
                 )
+
+        return findings
+
+    @staticmethod
+    def _check_api_token_usage(
+        target: str, provided_env: Optional[Dict[str, str]] = None
+    ) -> List[SecurityFinding]:
+        """Detect usage of API tokens for MCP server access.
+
+        Heuristics:
+        - Looks for token-like variable names in provided_env (from NPX invocation)
+          and in the current process environment.
+        - Flags query parameters in the target containing token-like names.
+        - Medium severity to highlight risks of long-lived static tokens.
+        """
+        findings: List[SecurityFinding] = []
+
+        token_key_patterns = [
+            "token",
+            "api_key",
+            "apikey",
+            "access_token",
+            "auth_token",
+            "bearer",
+            "jwt",
+        ]
+
+        def key_is_token_like(key: str) -> bool:
+            kl = key.lower()
+            return any(p in kl for p in token_key_patterns)
+
+        # Collect token-like keys from provided env and process env
+        provided = provided_env or {}
+        proc_env = os.environ
+
+        provided_hits = [k for k, v in provided.items() if key_is_token_like(k) and v]
+        env_hits = [
+            k
+            for k, v in proc_env.items()
+            if key_is_token_like(k) and v and len(v) >= 16
+        ]
+
+        # Check target URL query params for token-like names
+        try:
+            parsed = urlparse(target)
+            query = parsed.query or ""
+            query_hits = []
+            if query:
+                for part in query.split("&"):
+                    if "=" in part:
+                        name, _ = part.split("=", 1)
+                        if key_is_token_like(name):
+                            query_hits.append(name)
+        except Exception:
+            query_hits = []
+
+        hit_sets = {
+            "env": sorted(set(env_hits)),
+            "provided": sorted(set(provided_hits)),
+            "url_query": sorted(set(query_hits)),
+        }
+
+        total_hits = sum(len(v) for v in hit_sets.values())
+        if total_hits == 0:
+            return findings
+
+        evidence_parts = []
+        if hit_sets["provided"]:
+            evidence_parts.append(
+                f"provided env vars: {', '.join(hit_sets['provided'])}"
+            )
+        if hit_sets["env"]:
+            evidence_parts.append(
+                f"process env vars: {', '.join(hit_sets['env'][:5])}"
+                + (" + more" if len(hit_sets["env"]) > 5 else "")
+            )
+        if hit_sets["url_query"]:
+            evidence_parts.append(
+                f"url params: {', '.join(hit_sets['url_query'])}"
+            )
+
+        evidence = "; ".join(evidence_parts) if evidence_parts else None
+
+        findings.append(
+            SecurityFinding(
+                vulnerability_id="MCP-AUTH-001",
+                title="API Token Authentication Detected",
+                description=(
+                    "The MCP server appears to rely on static API tokens/keys for authentication. "
+                    "Long-lived tokens increase risk of leakage and unauthorized access."
+                ),
+                level=VulnerabilityLevel.MEDIUM,
+                category="Authentication",
+                affected_component="configuration",
+                evidence=evidence,
+                recommendation=(
+                    "Use short-lived, scoped credentials (e.g., OAuth/OIDC) or ephemeral tokens, "
+                    "store secrets in a secure manager, and rotate keys regularly. Avoid passing tokens "
+                    "via CLI or URL where they can be logged."
+                ),
+            )
+        )
 
         return findings
 
