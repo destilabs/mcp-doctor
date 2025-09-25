@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
@@ -176,7 +176,7 @@ def analyze(
     headers_json: Optional[str] = typer.Option(
         None,
         "--headers",
-        help="Additional HTTP headers as JSON object (e.g., '{\"Authorization\": \"Bearer ...\"}')",
+        help='Additional HTTP headers as JSON object (e.g., \'{"Authorization": "Bearer ..."}\')',
     ),
     header: List[str] = typer.Option(
         [],
@@ -259,7 +259,9 @@ def analyze(
             try:
                 parsed = json.loads(headers_json)
                 if not isinstance(parsed, dict):
-                    raise ValueError("--headers must be a JSON object mapping header names to values")
+                    raise ValueError(
+                        "--headers must be a JSON object mapping header names to values"
+                    )
                 # Convert all values to strings for httpx
                 headers_opt.update({str(k): str(v) for k, v in parsed.items()})
             except json.JSONDecodeError as exc:
@@ -295,7 +297,9 @@ def analyze(
             headers_opt[key] = value
 
         # Convenience: --api-key populates x-api-key if not overridden explicitly
-        if api_key and "x-api-key" not in {k.lower(): v for k, v in headers_opt.items()}:
+        if api_key and "x-api-key" not in {
+            k.lower(): v for k, v in headers_opt.items()
+        }:
             headers_opt["x-api-key"] = api_key
 
         # Load overrides file if provided
@@ -326,13 +330,9 @@ def analyze(
         if export_html:
             try:
                 formatter.export_to_html(result, verbose, export_html)
-                console.print(
-                    f"🌐 HTML report saved to [cyan]{export_html}[/cyan]"
-                )
+                console.print(f"🌐 HTML report saved to [cyan]{export_html}[/cyan]")
             except Exception as exc:
-                console.print(
-                    f"[red]❌ Failed to export HTML report: {exc}[/red]"
-                )
+                console.print(f"[red]❌ Failed to export HTML report: {exc}[/red]")
 
     except Exception as e:
         console.print(f"[red]❌ Error: {str(e)}[/red]")

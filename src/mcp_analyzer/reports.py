@@ -4,8 +4,8 @@ Includes HTML export using Rich's export_html to preserve styling.
 """
 
 import json
-from typing import Any, Dict, List, Optional
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.panel import Panel

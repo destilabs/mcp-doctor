@@ -192,7 +192,9 @@ class MCPClient:
         await self._ensure_server_ready()
 
         if self._transport == "http":
-            self._session = httpx.AsyncClient(timeout=self.timeout, headers=self._headers)
+            self._session = httpx.AsyncClient(
+                timeout=self.timeout, headers=self._headers
+            )
 
         return self
 
@@ -210,7 +212,9 @@ class MCPClient:
     async def _get_session(self) -> httpx.AsyncClient:
         """Get or create HTTP session."""
         if not self._session:
-            self._session = httpx.AsyncClient(timeout=self.timeout, headers=self._headers)
+            self._session = httpx.AsyncClient(
+                timeout=self.timeout, headers=self._headers
+            )
         return self._session
 
     async def _ensure_server_ready(self) -> None:
@@ -246,7 +250,9 @@ class MCPClient:
 
                     try:
                         self._sse_client = MCPSSEClient(
-                            self.server_target, timeout=self.timeout, headers=self._headers
+                            self.server_target,
+                            timeout=self.timeout,
+                            headers=self._headers,
                         )
                         await self._sse_client.__aenter__()
                         logger.info(

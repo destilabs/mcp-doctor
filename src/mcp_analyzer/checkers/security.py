@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
-import os
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -267,9 +267,7 @@ class SecurityChecker:
                 + (" + more" if len(hit_sets["env"]) > 5 else "")
             )
         if hit_sets["url_query"]:
-            evidence_parts.append(
-                f"url params: {', '.join(hit_sets['url_query'])}"
-            )
+            evidence_parts.append(f"url params: {', '.join(hit_sets['url_query'])}")
 
         evidence = "; ".join(evidence_parts) if evidence_parts else None
 

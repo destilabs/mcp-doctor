@@ -528,7 +528,9 @@ class TokenEfficiencyChecker:
             )
             return [
                 EvaluationScenario(
-                    name="minimal", params=override_params, description="Custom override"
+                    name="minimal",
+                    params=override_params,
+                    description="Custom override",
                 )
             ]
 
@@ -629,10 +631,13 @@ class TokenEfficiencyChecker:
             return self.overrides[norm]
 
         # Try British/American spelling variants
-        variants = {norm.replace("analyse", "analyze"), norm.replace("analyze", "analyse")}
-        for v in variants:
-            if v in self.overrides:
-                return self.overrides[v]
+        variants = {
+            norm.replace("analyse", "analyze"),
+            norm.replace("analyze", "analyse"),
+        }
+        for variant in variants:
+            if variant in self.overrides:
+                return self.overrides[variant]
 
         # Fallback: compare using normalized keys of provided overrides
         for k, v in self.overrides.items():

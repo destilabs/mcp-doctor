@@ -504,4 +504,6 @@ def test_api_token_detection_from_env_and_url(monkeypatch) -> None:
     assert finding.level == VulnerabilityLevel.MEDIUM
     assert finding.vulnerability_id == "MCP-AUTH-001"
     # Evidence should reference names, not values
-    assert "ACCESS_TOKEN" in (finding.evidence or "") or "access_token" in (finding.evidence or "")
+    assert "ACCESS_TOKEN" in (finding.evidence or "") or "access_token" in (
+        finding.evidence or ""
+    )

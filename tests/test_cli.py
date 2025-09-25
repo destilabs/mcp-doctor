@@ -48,7 +48,16 @@ def test_cli_analyze_success(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: False)
 
-    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.called_with = (
             target,
             check,
@@ -132,7 +141,16 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: True)
 
-    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.received = (
             target,
             check,
@@ -191,7 +209,16 @@ def test_cli_analyze_env_file(monkeypatch, tmp_path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("TOKEN=file\n", encoding="utf-8")
 
-    async def fake_run_analysis(target, check, timeout, verbose, show_tool_outputs, headers, overrides, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.received = npx_kwargs
         return {"server_url": "http://localhost", "tools_count": 0, "checks": {}}
 
@@ -798,7 +825,9 @@ def patch_analysis_dependencies(monkeypatch, *, is_npx: bool) -> None:
     monkeypatch.setattr(cli, "MCPClient", FakeClient)
     monkeypatch.setattr(cli, "is_npx_command", lambda target: is_npx)
     monkeypatch.setattr(cli, "DescriptionChecker", lambda: DummyDescriptionChecker())
-    monkeypatch.setattr(cli, "TokenEfficiencyChecker", lambda: DummyTokenChecker())
+    monkeypatch.setattr(
+        cli, "TokenEfficiencyChecker", lambda **kwargs: DummyTokenChecker()
+    )
     monkeypatch.setattr(
         cli, "SecurityChecker", lambda **kwargs: DummySecurityChecker(**kwargs)
     )
@@ -869,7 +898,9 @@ async def test_run_analysis_with_none_npx_kwargs(monkeypatch) -> None:
 
     assert result["is_npx_server"] is False
     assert FakeClient.last_instance is not None
-    assert FakeClient.last_instance.kwargs == {}  # Should be empty dict, not None
+    assert FakeClient.last_instance.kwargs == {
+        "headers": None
+    }  # headers parameter is passed
 
 
 def test_load_env_file_not_found(tmp_path) -> None:
