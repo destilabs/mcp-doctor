@@ -144,6 +144,31 @@ class TestTokenEfficiencyChecker:
         if "limit" in large.params:
             assert large.params["limit"] == 1000
 
+    def test_custom_overrides_are_applied(self):
+        """Custom overrides should be used for tools with known names."""
+        overrides = {
+            "analyse-video": {"videoId": "demo", "type": "summary"},
+            "analyze-video": {"videoId": "demo", "type": "summary"},
+        }
+        checker = TokenEfficiencyChecker(overrides=overrides)
+        # British spelling
+        tool1 = MagicMock()
+        tool1.name = "analyse-video"
+        tool1.input_schema = None
+        scenarios1 = checker._generate_test_scenarios(tool1)
+        assert len(scenarios1) == 1
+        assert scenarios1[0].name == "minimal"
+        assert "videoId" in scenarios1[0].params
+
+        # American spelling
+        tool2 = MagicMock()
+        tool2.name = "analyze_video"
+        tool2.input_schema = None
+        scenarios2 = checker._generate_test_scenarios(tool2)
+        assert len(scenarios2) == 1
+        assert scenarios2[0].name == "minimal"
+        assert "videoId" in scenarios2[0].params
+
     def test_likely_returns_collections(self):
         """Test collection detection."""
         # Tool that likely returns collections

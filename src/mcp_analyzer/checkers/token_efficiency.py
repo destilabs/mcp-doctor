@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
+from rich.console import Console
+
 logger = logging.getLogger(__name__)
+console = Console()
 
 
 class IssueType(str, Enum):
@@ -91,9 +94,13 @@ class TokenEfficiencyChecker:
     - Use semantic identifiers instead of technical ones
     """
 
-    def __init__(self) -> None:
+    def __init__(self, overrides: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
         self.max_recommended_tokens = 25000  # From Anthropic's article
         self.sample_requests_per_tool = 3  # Test multiple scenarios
+        # When enabled, print tool outputs during dynamic analysis
+        self.show_tool_outputs: bool = False
+        # External tool parameter overrides (normalized keys -> params dict)
+        self.overrides: Dict[str, Dict[str, Any]] = overrides or {}
 
         # Patterns for detecting verbose identifiers
         self.verbose_id_patterns = [
@@ -398,6 +405,23 @@ class TokenEfficiencyChecker:
                     f"Tool {tool_name} scenario {scenario.name}: {token_count} tokens"
                 )
 
+                # Optionally display tool output for this scenario
+                if self.show_tool_outputs:
+                    try:
+                        console.print(
+                            f"\n[dim]Tool[/dim] [cyan]{tool_name}[/cyan] "
+                            f"[dim]Scenario[/dim] [magenta]{scenario.name}[/magenta] "
+                            f"[dim](~{token_count} tokens)[/dim]"
+                        )
+                        # Prefer pretty JSON when possible
+                        if isinstance(response, (dict, list)):
+                            console.print_json(data=response, default=str)
+                        else:
+                            # Fallback: stringify non-JSON responses
+                            console.print(str(response))
+                    except Exception as print_exc:
+                        logger.debug(f"Failed to print tool output: {print_exc}")
+
             except Exception as e:
                 measurements.append(
                     ResponseMetric(
@@ -413,6 +437,12 @@ class TokenEfficiencyChecker:
                 logger.warning(
                     f"Failed to execute {tool_name} with scenario {scenario.name}: {e}"
                 )
+                if self.show_tool_outputs:
+                    console.print(
+                        f"\n[dim]Tool[/dim] [cyan]{tool_name}[/cyan] "
+                        f"[dim]Scenario[/dim] [magenta]{scenario.name}[/magenta] "
+                        f"[red]execution failed[/red]: {e}"
+                    )
 
         # Calculate aggregate metrics
         valid_measurements = [m for m in measurements if m.token_count > 0]
@@ -490,6 +520,20 @@ class TokenEfficiencyChecker:
         scenarios = []
         tool_name = getattr(tool, "name", "unknown_tool")
 
+        # Apply custom parameter overrides if defined for this tool
+        override_params = self._find_override_params(tool_name)
+        if override_params is not None:
+            logger.info(
+                f"Using custom override parameters for tool '{tool_name}': {list(override_params.keys())}"
+            )
+            return [
+                EvaluationScenario(
+                    name="minimal",
+                    params=override_params,
+                    description="Custom override",
+                )
+            ]
+
         input_schema = getattr(tool, "input_schema", None) or getattr(
             tool, "parameters", None
         )
@@ -562,6 +606,45 @@ class TokenEfficiencyChecker:
         )
 
         return scenarios
+
+    def _normalize_tool_name(self, name: str) -> str:
+        s = name.strip().lower()
+        s = re.sub(r"[\s_]+", "-", s)
+        return s
+
+    def _find_override_params(self, tool_name: str) -> Optional[Dict[str, Any]]:
+        """Find override params for a tool with robust matching.
+
+        - Case-insensitive
+        - Normalizes spaces/underscores to hyphens
+        - Tries both 'analyse' and 'analyze' spellings
+        """
+        if not self.overrides:
+            return None
+
+        # Try exact key first
+        if tool_name in self.overrides:
+            return self.overrides[tool_name]
+
+        norm = self._normalize_tool_name(tool_name)
+        if norm in self.overrides:
+            return self.overrides[norm]
+
+        # Try British/American spelling variants
+        variants = {
+            norm.replace("analyse", "analyze"),
+            norm.replace("analyze", "analyse"),
+        }
+        for variant in variants:
+            if variant in self.overrides:
+                return self.overrides[variant]
+
+        # Fallback: compare using normalized keys of provided overrides
+        for k, v in self.overrides.items():
+            nk = self._normalize_tool_name(k)
+            if nk == norm or nk in variants:
+                return v
+        return None
 
     def _generate_sample_value(
         self, param_name: str, param_schema: Dict[str, Any]

@@ -1,7 +1,11 @@
-"""Report formatting and display utilities."""
+"""Report formatting and display utilities.
+
+Includes HTML export using Rich's export_html to preserve styling.
+"""
 
 import json
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -30,6 +34,82 @@ class ReportFormatter:
             self._display_yaml(results)
         else:  # table format
             self._display_table(results, verbose)
+
+    # ---------------------------
+    # HTML export (preserves Rich styling)
+    # ---------------------------
+    def export_to_html(
+        self,
+        results: Dict[str, Any],
+        verbose: bool,
+        output_path: Path,
+        *,
+        width: Optional[int] = None,
+    ) -> None:
+        """Export the report to an HTML file using Rich's export_html.
+
+        Re-renders the report into a fresh Rich Console with recording enabled
+        to capture styled output (tables, panels, colors, emojis), then writes
+        HTML to the given file path. Inline styles are used when supported to
+        produce a standalone HTML snapshot.
+        """
+        from rich.console import Console as _Console
+
+        global console  # noqa: PLW0603 — intentional swap for reuse of render logic
+        original_console = console
+        try:
+            recorded_console = _Console(
+                record=True,
+                width=width or 160,  # wide enough to avoid table wrapping
+                force_terminal=True,
+                color_system="truecolor",
+                emoji=True,
+            )
+            console = recorded_console  # type: ignore[assignment]
+            self.display_results(results, verbose)
+
+            # Try with inline styles first; fall back if signature differs
+            try:
+                html = recorded_console.export_html(inline_styles=True, clear=False)
+            except TypeError:
+                try:
+                    html = recorded_console.export_html(clear=False)
+                except TypeError:
+                    html = recorded_console.export_html()
+
+            html = self._polish_exported_html(html)
+        finally:
+            console = original_console  # type: ignore[assignment]
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(html, encoding="utf-8")
+
+    def _polish_exported_html(self, html: str) -> str:
+        """Tweak exported HTML for better table alignment and readability.
+
+        - Force true monospace rendering without wrapping inside the <pre>.
+        - Add horizontal scroll if content exceeds viewport.
+        - Normalize white-space to `pre` (not `pre-wrap`) so ASCII/Unicode
+          table borders don't wrap mid-line.
+        """
+        # Wrap the pre block in a horizontally scrollable container
+        if "<pre" in html and "</pre>" in html:
+            html = html.replace(
+                "<pre",
+                (
+                    '<div style="overflow:auto; max-width:100%;">'
+                    '<pre style="white-space: pre; overflow-x: auto; '
+                    'font-variant-ligatures: none; letter-spacing: 0;"'
+                ),
+                1,
+            )
+            # Close the wrapper after the first pre end tag only once
+            html = html.replace("</pre>", "</pre></div>", 1)
+
+        # Some Rich versions set white-space: pre-wrap on inline styles; harden to pre
+        html = html.replace("white-space: pre-wrap", "white-space: pre")
+
+        return html
 
     def _display_table(self, results: Dict[str, Any], verbose: bool) -> None:
         """Display results in a rich table format."""

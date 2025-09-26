@@ -170,3 +170,16 @@ def test_report_formatter_json_and_yaml_output(monkeypatch) -> None:
     yaml_output = recording_console_yaml.export_text()
     assert "yaml-output" in yaml_output
     assert dump.called_with is not None
+
+
+def test_export_to_html(tmp_path) -> None:
+    """HTML export should write a styled snapshot containing the report title."""
+    formatter = ReportFormatter(output_format="table")
+    results = build_sample_results()
+    out_path = tmp_path / "report.html"
+
+    formatter.export_to_html(results, verbose=True, output_path=out_path)
+
+    text = out_path.read_text(encoding="utf-8")
+    assert "MCP Server Analysis Report" in text
+    assert "AI-Readable Description Analysis" in text
