@@ -67,12 +67,6 @@ These principles ensure MCP Doctor remains a tool you'll reach for daily—fast 
 
 ## 🚀 Quick Start
 
-### Installation
-
-```bash
-pip install mcp-doctor
-```
-
 ### Basic Usage
 
 ```bash
