@@ -48,12 +48,24 @@ def test_cli_analyze_success(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: False)
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.called_with = (
             target,
             check,
             timeout,
             verbose,
+            show_tool_outputs,
+            headers,
+            overrides,
             npx_kwargs,
         )
         return {
@@ -89,6 +101,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
         cli.CheckType.descriptions,
         30,
         False,
+        False,
+        None,
+        None,
         {},
     )
     assert DummyFormatter.created is not None
@@ -126,12 +141,24 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     monkeypatch.setattr(cli, "console", dummy_console)
     monkeypatch.setattr(cli, "is_npx_command", lambda value: True)
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.received = (
             target,
             check,
             timeout,
             verbose,
+            show_tool_outputs,
+            headers,
+            overrides,
             npx_kwargs,
         )
         return {
@@ -167,7 +194,7 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
     assert result.exit_code == 0
     assert any("NPX Command" in message for message in dummy_console.messages)
     assert fake_run_analysis.received is not None
-    assert fake_run_analysis.received[4] == {
+    assert fake_run_analysis.received[7] == {
         "env_vars": {"TOKEN": "xyz"},
         "working_dir": ".",
         "log_env_vars": False,
@@ -182,7 +209,16 @@ def test_cli_analyze_env_file(monkeypatch, tmp_path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("TOKEN=file\n", encoding="utf-8")
 
-    async def fake_run_analysis(target, check, timeout, verbose, npx_kwargs):
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
         fake_run_analysis.received = npx_kwargs
         return {"server_url": "http://localhost", "tools_count": 0, "checks": {}}
 
@@ -352,6 +388,9 @@ def test_cli_generate_dataset_invalid_env(monkeypatch) -> None:
 def test_cli_generate_dataset_langsmith_requires_api_key(monkeypatch, tmp_path) -> None:
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
+
+    # Ensure no LANGSMITH_API_KEY is set in environment
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
 
     tools_file = tmp_path / "tools.json"
     tools_file.write_text('["demo-tool"]', encoding="utf-8")
@@ -789,7 +828,9 @@ def patch_analysis_dependencies(monkeypatch, *, is_npx: bool) -> None:
     monkeypatch.setattr(cli, "MCPClient", FakeClient)
     monkeypatch.setattr(cli, "is_npx_command", lambda target: is_npx)
     monkeypatch.setattr(cli, "DescriptionChecker", lambda: DummyDescriptionChecker())
-    monkeypatch.setattr(cli, "TokenEfficiencyChecker", lambda: DummyTokenChecker())
+    monkeypatch.setattr(
+        cli, "TokenEfficiencyChecker", lambda **kwargs: DummyTokenChecker()
+    )
     monkeypatch.setattr(
         cli, "SecurityChecker", lambda **kwargs: DummySecurityChecker(**kwargs)
     )
@@ -860,7 +901,9 @@ async def test_run_analysis_with_none_npx_kwargs(monkeypatch) -> None:
 
     assert result["is_npx_server"] is False
     assert FakeClient.last_instance is not None
-    assert FakeClient.last_instance.kwargs == {}  # Should be empty dict, not None
+    assert FakeClient.last_instance.kwargs == {
+        "headers": None
+    }  # headers parameter is passed
 
 
 def test_load_env_file_not_found(tmp_path) -> None:
@@ -1008,3 +1051,298 @@ def test_load_and_apply_env_file_none(tmp_path) -> None:
 
     assert result == {}
     assert len(dummy_console.messages) == 0
+
+
+def test_load_overrides_file_json(tmp_path) -> None:
+    """Test loading overrides from JSON file."""
+    overrides_file = tmp_path / "overrides.json"
+    overrides_data = {"tool1": {"param1": "value1"}, "tool2": {"param2": "value2"}}
+    overrides_file.write_text(json.dumps(overrides_data), encoding="utf-8")
+
+    result = cli._load_overrides_file(overrides_file)
+    assert result == overrides_data
+
+
+def test_load_overrides_file_with_tools_block(tmp_path) -> None:
+    """Test loading overrides from file with 'tools' block."""
+    overrides_file = tmp_path / "overrides.json"
+    overrides_data = {
+        "tools": {"tool1": {"param1": "value1"}, "tool2": {"param2": "value2"}}
+    }
+    overrides_file.write_text(json.dumps(overrides_data), encoding="utf-8")
+
+    result = cli._load_overrides_file(overrides_file)
+    expected = {"tool1": {"param1": "value1"}, "tool2": {"param2": "value2"}}
+    assert result == expected
+
+
+def test_load_overrides_file_not_found(tmp_path) -> None:
+    """Test loading overrides from non-existent file."""
+    non_existent = tmp_path / "does_not_exist.json"
+
+    with pytest.raises(FileNotFoundError):
+        cli._load_overrides_file(non_existent)
+
+
+def test_load_overrides_file_invalid_json(tmp_path) -> None:
+    """Test loading overrides from invalid JSON file."""
+    overrides_file = tmp_path / "invalid.json"
+    overrides_file.write_text("{invalid json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
+        cli._load_overrides_file(overrides_file)
+
+
+def test_load_overrides_file_not_dict(tmp_path) -> None:
+    """Test loading overrides from file that doesn't contain a dict."""
+    overrides_file = tmp_path / "not_dict.json"
+    overrides_file.write_text('["not", "a", "dict"]', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a mapping"):
+        cli._load_overrides_file(overrides_file)
+
+
+def test_load_overrides_file_tools_not_dict(tmp_path) -> None:
+    """Test loading overrides where tools block is not a dict."""
+    overrides_file = tmp_path / "bad_tools.json"
+    overrides_data = {"tools": "not a dict"}
+    overrides_file.write_text(json.dumps(overrides_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a mapping"):
+        cli._load_overrides_file(overrides_file)
+
+
+def test_load_overrides_file_tool_not_dict(tmp_path) -> None:
+    """Test loading overrides where individual tool override is not a dict."""
+    overrides_file = tmp_path / "bad_tool.json"
+    overrides_data = {"tool1": "not a dict"}
+    overrides_file.write_text(json.dumps(overrides_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be an object/dict"):
+        cli._load_overrides_file(overrides_file)
+
+
+def test_cli_analyze_invalid_headers_json(monkeypatch) -> None:
+    """Test analyze command with invalid headers JSON."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    result = runner.invoke(
+        cli.app,
+        ["analyze", "--target", "http://localhost:8000", "--headers", "{invalid json}"],
+    )
+
+    assert result.exit_code != 0
+    assert any("Invalid JSON in --headers" in msg for msg in dummy_console.messages)
+
+
+def test_cli_analyze_headers_not_dict(monkeypatch) -> None:
+    """Test analyze command with headers that are not a dict."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--headers",
+            '["not", "a", "dict"]',
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert any("must be a JSON object" in msg for msg in dummy_console.messages)
+
+
+def test_cli_analyze_malformed_header(monkeypatch) -> None:
+    """Test analyze command with malformed --header option."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    # Mock the _run_analysis to avoid actual execution
+    async def fake_run_analysis(*args, **kwargs):
+        return {"server_url": "test", "tools_count": 0, "checks": {}}
+
+    monkeypatch.setattr(cli, "_run_analysis", fake_run_analysis)
+    monkeypatch.setattr(
+        cli,
+        "ReportFormatter",
+        lambda fmt: type(
+            "F", (), {"display_results": lambda self, data, verbose: None}
+        )(),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--header",
+            "malformed_header_no_separator",
+        ],
+    )
+
+    # Should still succeed but warn about malformed header
+    assert result.exit_code == 0
+    assert any("Ignoring malformed --header" in msg for msg in dummy_console.messages)
+
+
+def test_cli_analyze_empty_header_name(monkeypatch) -> None:
+    """Test analyze command with empty header name."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    # Mock the _run_analysis to avoid actual execution
+    async def fake_run_analysis(*args, **kwargs):
+        return {"server_url": "test", "tools_count": 0, "checks": {}}
+
+    monkeypatch.setattr(cli, "_run_analysis", fake_run_analysis)
+    monkeypatch.setattr(
+        cli,
+        "ReportFormatter",
+        lambda fmt: type(
+            "F", (), {"display_results": lambda self, data, verbose: None}
+        )(),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--header",
+            ":value_without_name",
+        ],
+    )
+
+    # Should still succeed but warn about empty header name
+    assert result.exit_code == 0
+    assert any(
+        "Ignoring --header with empty name" in msg for msg in dummy_console.messages
+    )
+
+
+def test_cli_analyze_api_key_header_handling(monkeypatch) -> None:
+    """Test analyze command API key handling with existing x-api-key header."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    async def fake_run_analysis(
+        target,
+        check,
+        timeout,
+        verbose,
+        show_tool_outputs,
+        headers,
+        overrides,
+        npx_kwargs,
+    ):
+        fake_run_analysis.received_headers = headers
+        return {"server_url": "test", "tools_count": 0, "checks": {}}
+
+    fake_run_analysis.received_headers = None
+    monkeypatch.setattr(cli, "_run_analysis", fake_run_analysis)
+    monkeypatch.setattr(
+        cli,
+        "ReportFormatter",
+        lambda fmt: type(
+            "F", (), {"display_results": lambda self, data, verbose: None}
+        )(),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--api-key",
+            "test-key",
+            "--header",
+            "X-API-KEY:existing-key",
+        ],
+    )
+
+    assert result.exit_code == 0
+    # Should not override existing x-api-key header
+    assert fake_run_analysis.received_headers["X-API-KEY"] == "existing-key"
+
+
+def test_cli_analyze_overrides_file_error(monkeypatch, tmp_path) -> None:
+    """Test analyze command with overrides file that fails to load."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    bad_overrides = tmp_path / "bad.json"
+    bad_overrides.write_text("{invalid json", encoding="utf-8")
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--overrides",
+            str(bad_overrides),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert any("Failed to load overrides" in msg for msg in dummy_console.messages)
+
+
+def test_cli_analyze_export_html_error(monkeypatch, tmp_path) -> None:
+    """Test analyze command with HTML export that fails."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    async def fake_run_analysis(*args, **kwargs):
+        return {"server_url": "test", "tools_count": 0, "checks": {}}
+
+    monkeypatch.setattr(cli, "_run_analysis", fake_run_analysis)
+
+    class FailingFormatter:
+        def __init__(self, fmt):
+            pass
+
+        def display_results(self, data, verbose):
+            pass
+
+        def export_to_html(self, data, verbose, path):
+            raise Exception("Export failed")
+
+    monkeypatch.setattr(cli, "ReportFormatter", FailingFormatter)
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "analyze",
+            "--target",
+            "http://localhost:8000",
+            "--export-html",
+            str(tmp_path / "report.html"),
+        ],
+    )
+
+    assert result.exit_code == 0  # Should not fail, just warn
+    assert any("Failed to export HTML report" in msg for msg in dummy_console.messages)
+
+
+def test_cli_analyze_general_exception(monkeypatch) -> None:
+    """Test analyze command with general exception."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    async def failing_run_analysis(*args, **kwargs):
+        raise Exception("Something went wrong")
+
+    monkeypatch.setattr(cli, "_run_analysis", failing_run_analysis)
+
+    result = runner.invoke(cli.app, ["analyze", "--target", "http://localhost:8000"])
+
+    assert result.exit_code != 0
+    assert any("Something went wrong" in msg for msg in dummy_console.messages)

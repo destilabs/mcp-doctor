@@ -163,7 +163,41 @@ mcp-doctor analyze --target "npx firecrawl-mcp" --output-format json > report.js
 
 # YAML for human-readable structured data
 mcp-doctor analyze --target "npx firecrawl-mcp" --output-format yaml
+
+# Export an HTML snapshot (preserves Rich styling)
+mcp-doctor analyze --target "npx firecrawl-mcp" --export-html ./docs/report.html
+
+# Show raw tool outputs during token efficiency checks
+mcp-doctor analyze --target "npx firecrawl-mcp" --check token_efficiency --show-tool-outputs
 ```
+
+Note: HTML export uses Rich's export_html to preserve colors, tables, and emojis in a single standalone file.
+
+## 🛠 Token Efficiency Overrides
+
+For tools that require specific parameters during token efficiency checks, you can supply overrides via a JSON/YAML file.
+
+Usage:
+
+```bash
+mcp-doctor analyze --target "npx firecrawl-mcp" --check token_efficiency --overrides ./overrides.json
+```
+
+Example `overrides.json`:
+
+```json
+{
+  "tools": {
+    "analyse-video": { "videoId": "68d52f0c18ca9db9c9db6bb0", "type": "summary" },
+    "analyze-video": { "videoId": "68d52f0c18ca9db9c9db6bb0", "type": "summary" },
+    "search-docs": { "query": "sample query", "limit": 10 }
+  }
+}
+```
+
+Notes:
+- Keys are matched case-insensitively; spaces/underscores are normalized (e.g., `analyze_video` → `analyze-video`).
+- If the file does not contain a top-level `tools` key, the top-level mapping is used directly.
 
 ## 🔧 Python API
 

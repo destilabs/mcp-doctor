@@ -486,3 +486,24 @@ def test_current_timestamp() -> None:
     # Should be parseable as datetime
     parsed = datetime.fromisoformat(timestamp)
     assert parsed.tzinfo is not None
+
+
+def test_api_token_detection_from_env_and_url(monkeypatch) -> None:
+    """_check_api_token_usage should flag token-like usage from env and URL."""
+    # Provide mock process env with token-like keys
+    monkeypatch.setenv("OPENAI_API_KEY", "x" * 24)
+    monkeypatch.setenv("NOT_SENSITIVE", "1")
+
+    provided = {"ACCESS_TOKEN": "abcd", "SAFE": "ok"}
+    target = "http://example.com/mcp?access_token=redacted&foo=bar"
+
+    findings = SecurityChecker._check_api_token_usage(target, provided)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.level == VulnerabilityLevel.MEDIUM
+    assert finding.vulnerability_id == "MCP-AUTH-001"
+    # Evidence should reference names, not values
+    assert "ACCESS_TOKEN" in (finding.evidence or "") or "access_token" in (
+        finding.evidence or ""
+    )
