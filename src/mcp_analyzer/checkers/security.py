@@ -77,10 +77,7 @@ class SecurityChecker:
         findings: List[SecurityFinding] = []
 
         findings.extend(self._check_network_exposure(parsed_target))
-
-        # Check for API token usage in environment or target URL
-        findings.extend(self._check_api_token_usage(target, self._provided_env_vars))
-
+        
         summary = self._summarize(findings)
 
         return {
