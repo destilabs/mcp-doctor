@@ -77,7 +77,7 @@ class SecurityChecker:
         findings: List[SecurityFinding] = []
 
         findings.extend(self._check_network_exposure(parsed_target))
-        
+
         summary = self._summarize(findings)
 
         return {
