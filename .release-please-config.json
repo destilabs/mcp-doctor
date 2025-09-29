@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "python",
+  "packages": {
+    ".": {
+      "package-name": "mcp-doctor",
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "pyproject.toml",
+          "tomlpath": "project.version"
+        },
+        {
+          "type": "regex",
+          "path": "src/mcp_analyzer/__init__.py",
+          "search": "^__version__ = \"[0-9]+\.[0-9]+\.[0-9]+\"$",
+          "replace": "__version__ = \"${version}\""
+        }
+      ]
+    }
+  }
+}
+
