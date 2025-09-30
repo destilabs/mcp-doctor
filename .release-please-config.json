@@ -1,6 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "python",
+  "include-component-in-tag": false,
   "packages": {
     ".": {
       "package-name": "mcp-doctor",
@@ -15,7 +16,7 @@
         {
           "type": "regex",
           "path": "src/mcp_analyzer/__init__.py",
-          "search": "^__version__ = \"[0-9]+\.[0-9]+\.[0-9]+\"$",
+          "search": "^__version__ = \\\"[0-9]+\\.[0-9]+\\.[0-9]+\\\"$",
           "replace": "__version__ = \"${version}\""
         }
       ]
