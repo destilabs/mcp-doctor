@@ -202,6 +202,11 @@ def analyze(
         "--overrides",
         help="Path to JSON or YAML file with tool parameter overrides for token efficiency checks",
     ),
+    oauth: bool = typer.Option(
+        False,
+        "--oauth",
+        help="Enable OAuth 2.0 authentication (opens browser for login). For SSE/HTTP servers only.",
+    ),
 ) -> None:
     """
     Diagnose an MCP server for agent-friendliness and best practices compliance.
@@ -321,6 +326,7 @@ def analyze(
                 headers_opt if headers_opt else None,
                 loaded_overrides,
                 npx_kwargs,
+                oauth,
             )
         )
 
@@ -339,43 +345,21 @@ def analyze(
         raise typer.Exit(1)
 
 
-async def _run_analysis(
-    target: str,
+async def _perform_checks(
     check: CheckType,
+    tools: List[Any],
+    client: Any,
+    target: str,
+    actual_url: str,
+    is_npx: bool,
+    overrides: Optional[Dict[str, Any]],
+    show_tool_outputs: bool,
     timeout: int,
-    verbose: bool,
-    show_tool_outputs: bool = False,
-    headers: Optional[Dict[str, str]] = None,
-    overrides: Optional[Dict[str, Any]] = None,
-    npx_kwargs: Optional[dict] = None,
+    npx_kwargs: dict,
 ) -> dict:
-    """Run the actual analysis logic."""
-
-    if npx_kwargs is None:
-        npx_kwargs = {}
-
-    client = MCPClient(target, timeout=timeout, headers=headers, **npx_kwargs)
-
-    is_npx = is_npx_command(target)
-
-    if is_npx:
-        with console.status("[bold green]Launching NPX server..."):
-
-            server_info = await client.get_server_info()
-            tools = await client.get_tools()
-
-        actual_url = client.get_server_url()
-        console.print(f"✅ NPX server launched at [cyan]{actual_url}[/cyan]")
-    else:
-        with console.status("[bold green]Connecting to MCP server..."):
-
-            server_info = await client.get_server_info()
-            tools = await client.get_tools()
-
-        actual_url = target
-
-    console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
-
+    """Perform the actual analysis checks."""
+    server_info = await client.get_server_info()
+    
     results: Dict[str, Any] = {
         "server_target": target,
         "server_url": actual_url,
@@ -385,38 +369,96 @@ async def _run_analysis(
         "checks": {},
     }
 
-    try:
+    if check in {CheckType.descriptions, CheckType.all}:
+        with console.status("[bold green]Analyzing tool descriptions..."):
+            checker = DescriptionChecker()
+            description_results = checker.analyze_tool_descriptions(tools)
+            results["checks"]["descriptions"] = description_results
 
-        if check in {CheckType.descriptions, CheckType.all}:
-            with console.status("[bold green]Analyzing tool descriptions..."):
-                checker = DescriptionChecker()
-                description_results = checker.analyze_tool_descriptions(tools)
-                results["checks"]["descriptions"] = description_results
+    if check in {CheckType.token_efficiency, CheckType.all}:
+        with console.status("[bold green]Analyzing token efficiency..."):
+            efficiency_checker = TokenEfficiencyChecker(overrides=overrides)
+            efficiency_checker.show_tool_outputs = bool(show_tool_outputs)
+            efficiency_results = await efficiency_checker.analyze_token_efficiency(
+                tools, client
+            )
+            results["checks"]["token_efficiency"] = efficiency_results
 
-        if check in {CheckType.token_efficiency, CheckType.all}:
-            with console.status("[bold green]Analyzing token efficiency..."):
-                efficiency_checker = TokenEfficiencyChecker(overrides=overrides)
-                efficiency_checker.show_tool_outputs = bool(show_tool_outputs)
-                efficiency_results = await efficiency_checker.analyze_token_efficiency(
-                    tools, client
-                )
-                results["checks"]["token_efficiency"] = efficiency_results
-
-        if check in {CheckType.security, CheckType.all}:
-            with console.status("[bold green]Running security audit..."):
-                security_checker = SecurityChecker(
-                    timeout=timeout,
-                    verify=False,
-                    env_vars=npx_kwargs.get("env_vars"),
-                )
-                security_results = await security_checker.analyze(actual_url)
-                results["checks"]["security"] = security_results
-
-    finally:
-
-        await client.close()
+    if check in {CheckType.security, CheckType.all}:
+        with console.status("[bold green]Running security audit..."):
+            security_checker = SecurityChecker(
+                timeout=timeout,
+                verify=False,
+                env_vars=npx_kwargs.get("env_vars"),
+            )
+            security_results = await security_checker.analyze(actual_url)
+            results["checks"]["security"] = security_results
 
     return results
+
+
+async def _run_analysis(
+    target: str,
+    check: CheckType,
+    timeout: int,
+    verbose: bool,
+    show_tool_outputs: bool = False,
+    headers: Optional[Dict[str, str]] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+    npx_kwargs: Optional[dict] = None,
+    oauth: bool = False,
+) -> dict:
+    """Run the actual analysis logic."""
+
+    if npx_kwargs is None:
+        npx_kwargs = {}
+
+    is_npx = is_npx_command(target)
+
+    if oauth and not is_npx:
+        from mcp_analyzer.fastmcp_oauth_client import FastMCPOAuthClient
+        
+        async with FastMCPOAuthClient(target, timeout=timeout) as client:
+            with console.status("[bold green]Connecting to MCP server with OAuth..."):
+                server_info = await client.get_server_info()
+                tools = await client.get_tools()
+
+            actual_url = target
+            console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
+
+            return await _perform_checks(
+                check, tools, client, target, actual_url, False, overrides, show_tool_outputs, timeout, npx_kwargs
+            )
+    else:
+        if oauth and is_npx:
+            console.print(
+                "[yellow]⚠️  OAuth is only supported for HTTP/SSE servers. "
+                "Ignoring --oauth flag for NPX command.[/yellow]\n"
+            )
+        client = MCPClient(target, timeout=timeout, headers=headers, **npx_kwargs)
+
+        if is_npx:
+            with console.status("[bold green]Launching NPX server..."):
+                server_info = await client.get_server_info()
+                tools = await client.get_tools()
+
+            actual_url = client.get_server_url()
+            console.print(f"✅ NPX server launched at [cyan]{actual_url}[/cyan]")
+        else:
+            with console.status("[bold green]Connecting to MCP server..."):
+                server_info = await client.get_server_info()
+                tools = await client.get_tools()
+
+            actual_url = target
+
+    console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
+
+    try:
+        return await _perform_checks(
+            check, tools, client, target, actual_url, is_npx, overrides, show_tool_outputs, timeout, npx_kwargs
+        )
+    finally:
+        await client.close()
 
 
 @app.command()
