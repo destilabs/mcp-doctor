@@ -167,7 +167,7 @@ class SecurityChecker:
                             vulnerability_id="MCP-NET-001",
                             title="External Network Exposure",
                             description="Server appears accessible from external networks",
-                            level=VulnerabilityLevel.MEDIUM,
+                            level=VulnerabilityLevel.INFO,
                             category="Network Security",
                             affected_component=hostname,
                             evidence=f"Resolved host: {hostname}",
