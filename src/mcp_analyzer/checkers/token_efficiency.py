@@ -6,9 +6,12 @@ import re
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
+
+from .token_efficiency_models import LLMParameterGenerator
+from .tool_call_cache import ToolCallCache
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -94,13 +97,26 @@ class TokenEfficiencyChecker:
     - Use semantic identifiers instead of technical ones
     """
 
-    def __init__(self, overrides: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
+    def __init__(
+        self,
+        overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        llm_model: str = "gpt-4o-mini",
+        cache_enabled: bool = True,
+        server_url: Optional[str] = None,
+    ) -> None:
         self.max_recommended_tokens = 25000  # From Anthropic's article
         self.sample_requests_per_tool = 3  # Test multiple scenarios
         # When enabled, print tool outputs during dynamic analysis
         self.show_tool_outputs: bool = False
         # External tool parameter overrides (normalized keys -> params dict)
         self.overrides: Dict[str, Dict[str, Any]] = overrides or {}
+        # LLM-based parameter generator for fixing validation errors
+        self.llm_generator = LLMParameterGenerator(model=llm_model)
+        # Tool call cache for successful inputs/outputs
+        self.cache_enabled = cache_enabled
+        self.cache: Optional[ToolCallCache] = None
+        if cache_enabled and server_url:
+            self.cache = ToolCallCache(server_url)
 
         # Patterns for detecting verbose identifiers
         self.verbose_id_patterns = [
@@ -405,6 +421,16 @@ class TokenEfficiencyChecker:
                     f"Tool {tool_name} scenario {scenario.name}: {token_count} tokens"
                 )
 
+                if self.cache:
+                    self.cache.cache_successful_call(
+                        tool_name=tool_name,
+                        input_params=scenario.params,
+                        output_response=response,
+                        token_count=token_count,
+                        response_time=end_time - start_time,
+                        scenario=scenario.name,
+                    )
+
                 # Optionally display tool output for this scenario
                 if self.show_tool_outputs:
                     try:
@@ -423,26 +449,125 @@ class TokenEfficiencyChecker:
                         logger.debug(f"Failed to print tool output: {print_exc}")
 
             except Exception as e:
-                measurements.append(
-                    ResponseMetric(
-                        scenario=scenario.name,
-                        token_count=0,
-                        response_time=0,
-                        response_size_bytes=0,
-                        contains_low_value_data=False,
-                        has_verbose_identifiers=False,
-                        error=str(e),
+                error_msg = str(e)
+
+                llm_will_retry = False
+                llm_succeeded = False
+
+                if self.llm_generator.is_available() and (
+                    "Invalid arguments" in error_msg
+                    or "validation" in error_msg.lower()
+                ):
+                    llm_will_retry = True
+                    logger.debug(
+                        f"Validation error detected for {tool_name}, attempting LLM correction"
                     )
-                )
-                logger.warning(
-                    f"Failed to execute {tool_name} with scenario {scenario.name}: {e}"
-                )
-                if self.show_tool_outputs:
-                    console.print(
-                        f"\n[dim]Tool[/dim] [cyan]{tool_name}[/cyan] "
-                        f"[dim]Scenario[/dim] [magenta]{scenario.name}[/magenta] "
-                        f"[red]execution failed[/red]: {e}"
+                    if self.show_tool_outputs:
+                        console.print(
+                            f"\n[yellow]⚙️  Using LLM to fix parameters for[/yellow] [cyan]{tool_name}[/cyan]"
+                        )
+
+                    tool_desc = getattr(tool, "description", None)
+                    input_schema = getattr(tool, "input_schema", None) or getattr(
+                        tool, "parameters", None
                     )
+
+                    corrected_params = await self.llm_generator.generate_parameters(
+                        tool_name=tool_name,
+                        input_schema=input_schema or {},
+                        tool_description=tool_desc,
+                        previous_attempt=scenario.params,
+                        error_feedback=error_msg,
+                    )
+
+                    if corrected_params:
+                        try:
+                            start_time = time.time()
+                            response = await mcp_client.call_tool(
+                                tool_name, corrected_params
+                            )
+                            end_time = time.time()
+
+                            token_count = self._estimate_token_count(response)
+                            response_size = len(
+                                json.dumps(response, ensure_ascii=False)
+                            )
+
+                            measurements.append(
+                                ResponseMetric(
+                                    scenario=f"{scenario.name}_llm_corrected",
+                                    token_count=token_count,
+                                    response_time=end_time - start_time,
+                                    response_size_bytes=response_size,
+                                    contains_low_value_data=self._detect_low_value_data(
+                                        response
+                                    ),
+                                    has_verbose_identifiers=self._detect_verbose_identifiers(
+                                        response
+                                    ),
+                                    is_truncated=self._detect_truncation(response),
+                                )
+                            )
+
+                            llm_succeeded = True
+                            logger.info(
+                                f"✅ LLM-corrected parameters succeeded for {tool_name}: {token_count} tokens"
+                            )
+
+                            if self.cache:
+                                self.cache.cache_successful_call(
+                                    tool_name=tool_name,
+                                    input_params=corrected_params,
+                                    output_response=response,
+                                    token_count=token_count,
+                                    response_time=end_time - start_time,
+                                    scenario=f"{scenario.name}_llm_corrected",
+                                )
+
+                            if self.show_tool_outputs:
+                                console.print(
+                                    f"[green]✅ LLM correction successful![/green] "
+                                    f"[dim](~{token_count} tokens)[/dim]"
+                                )
+                                if isinstance(response, (dict, list)):
+                                    console.print_json(data=response, default=str)
+                                else:
+                                    console.print(str(response))
+
+                            continue
+                        except Exception as retry_error:
+                            error_msg = str(retry_error)
+                            logger.warning(
+                                f"LLM-corrected parameters also failed for {tool_name}: {error_msg}"
+                            )
+                            if self.show_tool_outputs:
+                                console.print(
+                                    f"[red]❌ LLM correction failed:[/red] {error_msg}"
+                                )
+
+                if not llm_succeeded:
+                    measurements.append(
+                        ResponseMetric(
+                            scenario=scenario.name,
+                            token_count=0,
+                            response_time=0,
+                            response_size_bytes=0,
+                            contains_low_value_data=False,
+                            has_verbose_identifiers=False,
+                            error=error_msg,
+                        )
+                    )
+
+                    if not llm_will_retry:
+                        logger.warning(
+                            f"Failed to execute {tool_name} with scenario {scenario.name}: {error_msg}"
+                        )
+                        if self.show_tool_outputs:
+                            console.print(
+                                f"\n[dim]Tool[/dim] [cyan]{tool_name}[/cyan] "
+                                f"[dim]Scenario[/dim] [magenta]{scenario.name}[/magenta] "
+                                f"[red]execution failed[/red]: {error_msg}"
+                            )
 
         # Calculate aggregate metrics
         valid_measurements = [m for m in measurements if m.token_count > 0]

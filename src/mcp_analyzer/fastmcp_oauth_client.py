@@ -57,9 +57,19 @@ class FastMCPOAuthClient:
 
         return {
             "protocol_version": init_result.protocolVersion,
-            "server_name": init_result.serverInfo.name if init_result.serverInfo else "FastMCP Server",
-            "server_version": init_result.serverInfo.version if init_result.serverInfo else "unknown",
-            "capabilities": init_result.capabilities.model_dump() if init_result.capabilities else {},
+            "server_name": (
+                init_result.serverInfo.name
+                if init_result.serverInfo
+                else "FastMCP Server"
+            ),
+            "server_version": (
+                init_result.serverInfo.version if init_result.serverInfo else "unknown"
+            ),
+            "capabilities": (
+                init_result.capabilities.model_dump()
+                if init_result.capabilities
+                else {}
+            ),
             "transport": "sse-oauth",
         }
 
@@ -78,11 +88,11 @@ class FastMCPOAuthClient:
         tools = []
         for tool in tools_list:
             input_schema = tool.inputSchema
-            if hasattr(input_schema, 'model_dump'):
+            if hasattr(input_schema, "model_dump"):
                 input_schema = input_schema.model_dump()
             elif input_schema is None:
                 input_schema = {}
-            
+
             mcp_tool = MCPTool(
                 name=tool.name,
                 description=tool.description,
@@ -121,4 +131,3 @@ class FastMCPOAuthClient:
     def get_server_url(self) -> str:
         """Get the server URL."""
         return self.server_url
-

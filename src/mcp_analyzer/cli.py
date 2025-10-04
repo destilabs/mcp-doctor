@@ -207,6 +207,16 @@ def analyze(
         "--oauth",
         help="Enable OAuth 2.0 authentication (opens browser for login). For SSE/HTTP servers only.",
     ),
+    llm_model: str = typer.Option(
+        "gpt-4o-mini",
+        "--llm-model",
+        help="LLM model for parameter generation when validation fails (gpt-4o-mini, gpt-4o, claude-3-5-sonnet-20241022)",
+    ),
+    cache_tool_calls: bool = typer.Option(
+        True,
+        "--cache-tool-calls/--no-cache-tool-calls",
+        help="Cache successful tool calls for future reference (stored in ~/.mcp-analyzer/tool-call-cache)",
+    ),
 ) -> None:
     """
     Diagnose an MCP server for agent-friendliness and best practices compliance.
@@ -228,6 +238,10 @@ def analyze(
       mcp-doctor analyze --target "npx firecrawl-mcp" --env-vars '{"FIRECRAWL_API_KEY": "abc123"}'
     """
     is_npx = is_npx_command(target)
+    # For type compatibility across OAuth and non-OAuth branches
+    from typing import Any as _Any
+
+    client: _Any
 
     console.print("\n🩺 [bold blue]MCP Doctor - Server Diagnosis[/bold blue]")
     if is_npx:
@@ -327,6 +341,8 @@ def analyze(
                 loaded_overrides,
                 npx_kwargs,
                 oauth,
+                llm_model,
+                cache_tool_calls,
             )
         )
 
@@ -356,10 +372,12 @@ async def _perform_checks(
     show_tool_outputs: bool,
     timeout: int,
     npx_kwargs: dict,
+    llm_model: str = "gpt-4o-mini",
+    cache_tool_calls: bool = True,
 ) -> dict:
     """Perform the actual analysis checks."""
     server_info = await client.get_server_info()
-    
+
     results: Dict[str, Any] = {
         "server_target": target,
         "server_url": actual_url,
@@ -377,12 +395,25 @@ async def _perform_checks(
 
     if check in {CheckType.token_efficiency, CheckType.all}:
         with console.status("[bold green]Analyzing token efficiency..."):
-            efficiency_checker = TokenEfficiencyChecker(overrides=overrides)
+            efficiency_checker = TokenEfficiencyChecker(
+                overrides=overrides,
+                llm_model=llm_model,
+                cache_enabled=cache_tool_calls,
+                server_url=actual_url,
+            )
             efficiency_checker.show_tool_outputs = bool(show_tool_outputs)
             efficiency_results = await efficiency_checker.analyze_token_efficiency(
                 tools, client
             )
             results["checks"]["token_efficiency"] = efficiency_results
+
+            if cache_tool_calls and efficiency_checker.cache:
+                cache_stats = efficiency_checker.cache.get_cache_stats()
+                if cache_stats.get("total_calls", 0) > 0:
+                    console.print(
+                        f"\n💾 Cached {cache_stats.get('total_calls', 0)} successful tool calls "
+                        f"to [cyan]{cache_stats.get('cache_path', 'cache')}[/cyan]"
+                    )
 
     if check in {CheckType.security, CheckType.all}:
         with console.status("[bold green]Running security audit..."):
@@ -407,6 +438,8 @@ async def _run_analysis(
     overrides: Optional[Dict[str, Any]] = None,
     npx_kwargs: Optional[dict] = None,
     oauth: bool = False,
+    llm_model: str = "gpt-4o-mini",
+    cache_tool_calls: bool = True,
 ) -> dict:
     """Run the actual analysis logic."""
 
@@ -417,17 +450,28 @@ async def _run_analysis(
 
     if oauth and not is_npx:
         from mcp_analyzer.fastmcp_oauth_client import FastMCPOAuthClient
-        
-        async with FastMCPOAuthClient(target, timeout=timeout) as client:
+
+        async with FastMCPOAuthClient(target, timeout=timeout) as oauth_client:
             with console.status("[bold green]Connecting to MCP server with OAuth..."):
-                server_info = await client.get_server_info()
-                tools = await client.get_tools()
+                await oauth_client.get_server_info()
+                tools = await oauth_client.get_tools()
 
             actual_url = target
             console.print(f"✅ Connected! Found [bold]{len(tools)}[/bold] tools\n")
 
             return await _perform_checks(
-                check, tools, client, target, actual_url, False, overrides, show_tool_outputs, timeout, npx_kwargs
+                check,
+                tools,
+                oauth_client,
+                target,
+                actual_url,
+                False,
+                overrides,
+                show_tool_outputs,
+                timeout,
+                npx_kwargs,
+                llm_model,
+                cache_tool_calls,
             )
     else:
         if oauth and is_npx:
@@ -439,14 +483,14 @@ async def _run_analysis(
 
         if is_npx:
             with console.status("[bold green]Launching NPX server..."):
-                server_info = await client.get_server_info()
+                await client.get_server_info()
                 tools = await client.get_tools()
 
             actual_url = client.get_server_url()
             console.print(f"✅ NPX server launched at [cyan]{actual_url}[/cyan]")
         else:
             with console.status("[bold green]Connecting to MCP server..."):
-                server_info = await client.get_server_info()
+                await client.get_server_info()
                 tools = await client.get_tools()
 
             actual_url = target
@@ -455,7 +499,18 @@ async def _run_analysis(
 
     try:
         return await _perform_checks(
-            check, tools, client, target, actual_url, is_npx, overrides, show_tool_outputs, timeout, npx_kwargs
+            check,
+            tools,
+            client,
+            target,
+            actual_url,
+            is_npx,
+            overrides,
+            show_tool_outputs,
+            timeout,
+            npx_kwargs,
+            llm_model,
+            cache_tool_calls,
         )
     finally:
         await client.close()
@@ -659,6 +714,135 @@ def version() -> None:
     console.print("• 🔮 Schema Validation (coming soon)")
     console.print("• ⚡ Performance Analysis (coming soon)")
     console.print("• 🔒 Security Audit (coming soon)")
+
+
+@app.command()
+def cache_stats(
+    server_url: Optional[str] = typer.Option(
+        None,
+        "--server",
+        help="Show cache stats for specific server URL (shows all if not provided)",
+    ),
+) -> None:
+    """Show statistics about cached tool calls."""
+    from pathlib import Path
+
+    from mcp_analyzer.checkers.tool_call_cache import ToolCallCache
+
+    cache_root = Path.home() / ".mcp-analyzer" / "tool-call-cache"
+
+    if not cache_root.exists():
+        console.print(
+            "[yellow]No cache found. Run token efficiency checks with --cache-tool-calls to build cache.[/yellow]"
+        )
+        return
+
+    if server_url:
+        cache = ToolCallCache(server_url)
+        stats = cache.get_cache_stats()
+
+        console.print(f"\n[bold]Cache Statistics for {server_url}[/bold]")
+        console.print(f"Cache Path: [cyan]{stats['cache_path']}[/cyan]")
+        console.print(f"Total Tools: [green]{stats['total_tools']}[/green]")
+        console.print(f"Total Cached Calls: [green]{stats['total_calls']}[/green]\n")
+
+        if stats.get("tools"):
+            console.print("[bold]Tools:[/bold]")
+            for tool_name, tool_data in stats["tools"].items():
+                console.print(
+                    f"  • [cyan]{tool_name}[/cyan]: {tool_data['total_cached_calls']} calls"
+                )
+                scenarios = tool_data.get("scenarios", {})
+                if scenarios:
+                    for scenario, count in scenarios.items():
+                        console.print(f"    - {scenario}: {count}")
+    else:
+        console.print("\n[bold]All Cached Servers:[/bold]\n")
+
+        server_dirs = [d for d in cache_root.iterdir() if d.is_dir()]
+        if not server_dirs:
+            console.print("[yellow]No cached servers found.[/yellow]")
+            return
+
+        for server_dir in server_dirs:
+            metadata_file = server_dir / "_metadata.json"
+            if metadata_file.exists():
+                import json
+
+                try:
+                    metadata = json.loads(metadata_file.read_text())
+                    server = metadata.get("server_url", server_dir.name)
+
+                    cache = ToolCallCache(server)
+                    stats = cache.get_cache_stats()
+
+                    console.print(f"[cyan]{server}[/cyan]")
+                    console.print(
+                        f"  Tools: {stats['total_tools']}, Calls: {stats['total_calls']}"
+                    )
+                except Exception:
+                    pass
+
+
+@app.command()
+def cache_clear(
+    server_url: Optional[str] = typer.Option(
+        None,
+        "--server",
+        help="Clear cache for specific server URL (clears all if not provided)",
+    ),
+    tool_name: Optional[str] = typer.Option(
+        None,
+        "--tool",
+        help="Clear cache for specific tool only (requires --server)",
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """Clear cached tool calls."""
+    import shutil
+    from pathlib import Path
+
+    from mcp_analyzer.checkers.tool_call_cache import ToolCallCache
+
+    cache_root = Path.home() / ".mcp-analyzer" / "tool-call-cache"
+
+    if not cache_root.exists():
+        console.print("[yellow]No cache found.[/yellow]")
+        return
+
+    if tool_name and not server_url:
+        console.print("[red]Error: --tool requires --server[/red]")
+        raise typer.Exit(1)
+
+    if not confirm:
+        if tool_name:
+            message = f"Clear cache for tool '{tool_name}' on server '{server_url}'?"
+        elif server_url:
+            message = f"Clear all cache for server '{server_url}'?"
+        else:
+            message = "Clear ALL cached tool calls for ALL servers?"
+
+        if not typer.confirm(message):
+            console.print("Cancelled.")
+            return
+
+    if server_url:
+        cache = ToolCallCache(server_url)
+        cache.clear_cache(tool_name=tool_name)
+
+        if tool_name:
+            console.print(f"[green]✓[/green] Cleared cache for tool: {tool_name}")
+        else:
+            console.print(f"[green]✓[/green] Cleared cache for server: {server_url}")
+    else:
+        shutil.rmtree(cache_root)
+        cache_root.mkdir(parents=True, exist_ok=True)
+        console.print("[green]✓[/green] Cleared all cache")
 
 
 if __name__ == "__main__":

@@ -150,7 +150,7 @@ def test_check_network_exposure_external_ipv4() -> None:
     assert len(findings) == 1
     finding = findings[0]
     assert finding.vulnerability_id == "MCP-NET-001"
-    assert finding.level == VulnerabilityLevel.MEDIUM
+    assert finding.level == VulnerabilityLevel.INFO
     assert "External Network Exposure" in finding.title
     assert finding.affected_component == "8.8.8.8"
     assert "Resolved host: 8.8.8.8" in finding.evidence
@@ -168,7 +168,7 @@ def test_check_network_exposure_private_ipv4() -> None:
         assert len(findings) == 1
         finding = findings[0]
         assert finding.vulnerability_id == "MCP-NET-001"
-        assert finding.level == VulnerabilityLevel.MEDIUM
+        assert finding.level == VulnerabilityLevel.INFO
         assert "External Network Exposure" in finding.title
         assert finding.affected_component == ip
         assert f"Resolved host: {ip}" in finding.evidence

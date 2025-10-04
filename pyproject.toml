@@ -42,6 +42,10 @@ dev = [
     "mypy>=1.0.0",
     "types-PyYAML>=6.0.0",
 ]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.34.0",
+]
 
 [project.scripts]
 mcp-doctor = "mcp_analyzer.cli:app"
