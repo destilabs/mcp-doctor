@@ -28,6 +28,7 @@ dependencies = [
     "rich>=13.0.0",
     "pydantic>=2.0.0",
     "langsmith>=0.1.69",
+    "fastmcp>=2.12.4",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,10 @@ dev = [
     "isort>=5.10.0",
     "mypy>=1.0.0",
     "types-PyYAML>=6.0.0",
+]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.34.0",
 ]
 
 [project.scripts]

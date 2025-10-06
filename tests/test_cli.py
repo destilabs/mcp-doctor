@@ -57,6 +57,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
         headers,
         overrides,
         npx_kwargs,
+        oauth=False,
+        llm_model="gpt-4o-mini",
+        cache_tool_calls=True,
     ):
         fake_run_analysis.called_with = (
             target,
@@ -67,6 +70,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
             headers,
             overrides,
             npx_kwargs,
+            oauth,
+            llm_model,
+            cache_tool_calls,
         )
         return {
             "server_url": target,
@@ -105,6 +111,9 @@ def test_cli_analyze_success(monkeypatch) -> None:
         None,
         None,
         {},
+        False,
+        "gpt-4o-mini",
+        True,
     )
     assert DummyFormatter.created is not None
     assert DummyFormatter.created.data["server_url"] == "http://localhost:8080/mcp"
@@ -150,6 +159,9 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
         headers,
         overrides,
         npx_kwargs,
+        oauth=False,
+        llm_model="gpt-4o-mini",
+        cache_tool_calls=True,
     ):
         fake_run_analysis.received = (
             target,
@@ -160,6 +172,9 @@ def test_cli_analyze_handles_npx(monkeypatch) -> None:
             headers,
             overrides,
             npx_kwargs,
+            oauth,
+            llm_model,
+            cache_tool_calls,
         )
         return {
             "server_url": "http://localhost:9999",
@@ -218,6 +233,9 @@ def test_cli_analyze_env_file(monkeypatch, tmp_path) -> None:
         headers,
         overrides,
         npx_kwargs,
+        oauth=False,
+        llm_model="gpt-4o-mini",
+        cache_tool_calls=True,
     ):
         fake_run_analysis.received = npx_kwargs
         return {"server_url": "http://localhost", "tools_count": 0, "checks": {}}
@@ -771,6 +789,8 @@ class DummyTokenChecker:
 
     def __init__(self) -> None:
         self.tools = None
+        # Ensure newer code that inspects `.cache` doesn't error out in tests
+        self.cache = None
 
     async def analyze_token_efficiency(self, tools, client):
         self.tools = tools
@@ -1240,6 +1260,9 @@ def test_cli_analyze_api_key_header_handling(monkeypatch) -> None:
         headers,
         overrides,
         npx_kwargs,
+        oauth=False,
+        llm_model="gpt-4o-mini",
+        cache_tool_calls=True,
     ):
         fake_run_analysis.received_headers = headers
         return {"server_url": "test", "tools_count": 0, "checks": {}}
