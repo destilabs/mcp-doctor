@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional, cast
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from fastmcp import Client as FastMCPClient
+from fastmcp.client.transports import StreamableHttpTransport
+
 from .mcp_sse_client import MCPSSEClient
 from .mcp_stdio_client import MCPStdioClient
 from .npx_launcher import NPXLauncherError, NPXServerManager, is_npx_command
@@ -65,9 +68,12 @@ class MCPClient:
         self._npx_manager: Optional[NPXServerManager] = None
         self._stdio_client: Optional[MCPStdioClient] = None
         self._sse_client: Optional[MCPSSEClient] = None
+        self._streamable_client: Optional[FastMCPClient] = None
+        self._streamable_transport: Optional[StreamableHttpTransport] = None
         self._is_npx_server = is_npx_command(server_target)
         self._actual_server_url: Optional[str] = None
         self._headers: Dict[str, str] = dict(headers or {})
+        self._streamable_attempted: bool = False
 
         self._transport = self._detect_transport_type(transport)
 
@@ -217,6 +223,204 @@ class MCPClient:
             )
         return self._session
 
+    async def _ensure_streamable_http_client(self) -> None:
+        """Ensure a Streamable HTTP client is initialized and connected."""
+        if self._streamable_client:
+            return
+
+        if self._is_npx_server:
+            raise MCPClientError(
+                "Streamable HTTP transport is not supported for NPX targets."
+            )
+
+        try:
+            transport = StreamableHttpTransport(
+                self.server_target, headers=dict(self._headers)
+            )
+            client = FastMCPClient(transport, timeout=self.timeout)
+            await client.__aenter__()
+        except Exception as exc:  # pragma: no cover - fastmcp handles detailed errors
+            raise MCPClientError(
+                f"Failed to establish Streamable HTTP connection: {exc}"
+            ) from exc
+
+        self._streamable_transport = transport
+        self._streamable_client = client
+        self._transport = "streamable_http"
+        self._actual_server_url = self.server_target.rstrip("/")
+
+    def _convert_fastmcp_tools(self, tools_list: List[Any]) -> List[MCPTool]:
+        """Convert FastMCP tool objects into MCPTool instances."""
+        converted: List[MCPTool] = []
+        for tool in tools_list:
+            name = getattr(tool, "name", "unnamed_tool")
+            description = getattr(tool, "description", None)
+            input_schema = getattr(tool, "inputSchema", None)
+            parameters = getattr(tool, "parameters", None)
+
+            if hasattr(input_schema, "model_dump"):
+                try:
+                    input_schema = input_schema.model_dump()
+                except Exception:
+                    input_schema = None
+            if hasattr(parameters, "model_dump"):
+                try:
+                    parameters = parameters.model_dump()
+                except Exception:
+                    parameters = None
+
+            converted.append(
+                MCPTool(
+                    name=name,
+                    description=description,
+                    input_schema=input_schema,
+                    parameters=parameters,
+                )
+            )
+        return converted
+
+    async def _maybe_upgrade_to_streamable(self, reason: Exception) -> bool:
+        """Attempt to upgrade legacy HTTP transport to Streamable HTTP."""
+        if self._transport == "streamable_http" or self._is_npx_server:
+            return False
+        if self._streamable_attempted:
+            return False
+
+        self._streamable_attempted = True
+        try:
+            await self._ensure_streamable_http_client()
+            logger.info(
+                "Switched to Streamable HTTP transport after HTTP failure: %s", reason
+            )
+            return True
+        except Exception as exc:
+            logger.debug(
+                "Streamable HTTP upgrade failed: %s", exc, exc_info=logger.isEnabledFor(logging.DEBUG)
+            )
+            return False
+
+    async def _get_server_info_via_http(self) -> MCPServerInfo:
+        """Fetch server info using legacy HTTP JSON endpoints."""
+        server_url = self.get_server_url()
+        session = await self._get_session()
+
+        try:
+            response = await asyncio.wait_for(
+                session.get(server_url), timeout=self.timeout
+            )
+            logger.info(f"HTTP response: {response.status_code}")
+        except asyncio.TimeoutError:
+            raise MCPClientError(
+                f"HTTP request timed out after {self.timeout} seconds. "
+                f"The server at {server_url} is not responding."
+            )
+
+        if response.status_code == 404:
+            raise MCPClientError(
+                f"MCP server not found at {server_url} (404). "
+                f"Make sure the server is running and MCP is mounted at the correct path."
+            )
+
+        if response.status_code != 200:
+            try:
+                error_body = response.text[:200]
+            except Exception:
+                error_body = "Unable to read response body"
+
+            raise MCPClientError(
+                f"Server returned status {response.status_code}. "
+                f"Response: {error_body}"
+            )
+
+        try:
+            data = response.json()
+            logger.debug(
+                f"Server response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}"
+            )
+        except Exception as exc:
+            try:
+                content_preview = response.text[:200]
+            except Exception:
+                content_preview = "Unable to read response content"
+
+            raise MCPClientError(
+                f"Invalid JSON response from server: {exc}. "
+                f"Response content: {content_preview}"
+            )
+
+        return MCPServerInfo(
+            protocol_version=data.get("protocol_version"),
+            server_name=data.get("server_name", "Unknown"),
+            server_version=data.get("server_version"),
+            capabilities=data.get("capabilities", {}),
+        )
+
+    async def _get_tools_via_http(self) -> List[MCPTool]:
+        """Fetch tool list using legacy HTTP JSON endpoints."""
+        server_url = self.get_server_url()
+        session = await self._get_session()
+
+        try:
+            response = await asyncio.wait_for(
+                session.get(server_url), timeout=self.timeout
+            )
+        except asyncio.TimeoutError:
+            raise MCPClientError(
+                f"HTTP request for tools timed out after {self.timeout} seconds. "
+                f"The server at {server_url} is not responding."
+            )
+
+        if response.status_code != 200:
+            try:
+                error_body = response.text[:200]
+            except Exception:
+                error_body = "Unable to read response body"
+
+            raise MCPClientError(
+                f"Cannot fetch tools: Server returned {response.status_code}. "
+                f"Response: {error_body}"
+            )
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            try:
+                content_preview = response.text[:200]
+            except Exception:
+                content_preview = "Unable to read response content"
+
+            raise MCPClientError(
+                f"Invalid JSON response when fetching tools: {exc}. "
+                f"Response content: {content_preview}"
+            )
+
+        tools_data = data.get("tools", [])
+        if not tools_data:
+            logger.warning("No tools found in MCP server response")
+            return []
+
+        tools: List[MCPTool] = []
+        for tool_data in tools_data:
+            try:
+                if isinstance(tool_data, str):
+                    tool = MCPTool(name=tool_data)
+                elif isinstance(tool_data, dict):
+                    tool = MCPTool(
+                        name=tool_data.get("name", "unnamed_tool"),
+                        description=tool_data.get("description"),
+                        input_schema=tool_data.get("inputSchema"),
+                        parameters=tool_data.get("parameters"),
+                    )
+                else:
+                    logger.warning(f"Unexpected tool data format: {type(tool_data)}")
+                    continue
+                tools.append(tool)
+            except ValidationError as exc:
+                logger.warning(f"Failed to parse tool data: {exc}")
+                continue
+
+        return tools
+
     async def _ensure_server_ready(self) -> None:
         """Ensure the server is running and ready for communication."""
         if self._transport == "stdio":
@@ -324,67 +528,44 @@ class MCPClient:
                     server_version=info.get("server_version"),
                     capabilities=info.get("capabilities", {}),
                 )
-            else:
-                # HTTP transport with enhanced debugging
-                server_url = self.get_server_url()
-                logger.info(f"Making HTTP request to: {server_url}")
-
-                session = await self._get_session()
-
-                try:
-                    # Add explicit timeout wrapper
-                    response = await asyncio.wait_for(
-                        session.get(server_url), timeout=self.timeout
-                    )
-                    logger.info(f"HTTP response: {response.status_code}")
-
-                except asyncio.TimeoutError:
+            elif self._transport == "streamable_http":
+                await self._ensure_streamable_http_client()
+                if not self._streamable_client:
+                    raise MCPClientError("Streamable HTTP client not initialized")
+                init_result = self._streamable_client.initialize_result
+                if not init_result:
                     raise MCPClientError(
-                        f"HTTP request timed out after {self.timeout} seconds. "
-                        f"The server at {server_url} is not responding."
+                        "Streamable HTTP client has no initialization result"
                     )
-
-                if response.status_code == 404:
-                    raise MCPClientError(
-                        f"MCP server not found at {server_url} (404). "
-                        f"Make sure the server is running and MCP is mounted at the correct path."
-                    )
-
-                if response.status_code != 200:
-                    # Include response body for better debugging
-                    try:
-                        error_body = response.text[:200]
-                    except Exception:
-                        error_body = "Unable to read response body"
-
-                    raise MCPClientError(
-                        f"Server returned status {response.status_code}. "
-                        f"Response: {error_body}"
-                    )
-
-                try:
-                    data = response.json()
-                    logger.debug(
-                        f"Server response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}"
-                    )
-                except Exception as e:
-                    # Include response content for debugging
-                    try:
-                        content_preview = response.text[:200]
-                    except Exception:
-                        content_preview = "Unable to read response content"
-
-                    raise MCPClientError(
-                        f"Invalid JSON response from server: {e}. "
-                        f"Response content: {content_preview}"
-                    )
-
-                return MCPServerInfo(
-                    protocol_version=data.get("protocol_version"),
-                    server_name=data.get("server_name", "Unknown"),
-                    server_version=data.get("server_version"),
-                    capabilities=data.get("capabilities", {}),
+                capabilities = (
+                    init_result.capabilities.model_dump()
+                    if getattr(init_result, "capabilities", None)
+                    else {}
                 )
+                server_info = getattr(init_result, "serverInfo", None)
+                return MCPServerInfo(
+                    protocol_version=str(init_result.protocolVersion)
+                    if getattr(init_result, "protocolVersion", None)
+                    else None,
+                    server_name=(
+                        server_info.name
+                        if server_info and getattr(server_info, "name", None)
+                        else "Streamable HTTP MCP Server"
+                    ),
+                    server_version=(
+                        server_info.version
+                        if server_info and getattr(server_info, "version", None)
+                        else None
+                    ),
+                    capabilities=capabilities,
+                )
+            else:
+                try:
+                    return await self._get_server_info_via_http()
+                except MCPClientError as exc:
+                    if await self._maybe_upgrade_to_streamable(exc):
+                        return await self.get_server_info()
+                    raise
 
         except httpx.ConnectError as e:
             raise MCPClientError(
@@ -422,45 +603,19 @@ class MCPClient:
                 if not self._sse_client:
                     raise MCPClientError("SSE client not initialized")
                 tools_data = await self._sse_client.list_tools()
+            elif self._transport == "streamable_http":
+                await self._ensure_streamable_http_client()
+                if not self._streamable_client:
+                    raise MCPClientError("Streamable HTTP client not initialized")
+                tools_list = await self._streamable_client.list_tools()
+                return self._convert_fastmcp_tools(tools_list)
             else:
-                server_url = self.get_server_url()
-                session = await self._get_session()
-
                 try:
-                    response = await asyncio.wait_for(
-                        session.get(server_url), timeout=self.timeout
-                    )
-                except asyncio.TimeoutError:
-                    raise MCPClientError(
-                        f"HTTP request for tools timed out after {self.timeout} seconds. "
-                        f"The server at {server_url} is not responding."
-                    )
-
-                if response.status_code != 200:
-                    try:
-                        error_body = response.text[:200]
-                    except Exception:
-                        error_body = "Unable to read response body"
-
-                    raise MCPClientError(
-                        f"Cannot fetch tools: Server returned {response.status_code}. "
-                        f"Response: {error_body}"
-                    )
-
-                try:
-                    data = response.json()
-                except Exception as e:
-                    try:
-                        content_preview = response.text[:200]
-                    except Exception:
-                        content_preview = "Unable to read response content"
-
-                    raise MCPClientError(
-                        f"Invalid JSON response when fetching tools: {e}. "
-                        f"Response content: {content_preview}"
-                    )
-
-                tools_data = data.get("tools", [])
+                    return await self._get_tools_via_http()
+                except MCPClientError as exc:
+                    if await self._maybe_upgrade_to_streamable(exc):
+                        return await self.get_tools()
+                    raise
 
             if not tools_data:
                 logger.warning("No tools found in MCP server response")
@@ -563,6 +718,24 @@ class MCPClient:
             elif self._sse_client:
                 # Use SSE client for SSE servers
                 return await self._sse_client.call_tool(tool_name, arguments)
+            elif self._transport == "streamable_http":
+                await self._ensure_streamable_http_client()
+                if not self._streamable_client:
+                    raise MCPClientError("Streamable HTTP client not initialized")
+                result = await self._streamable_client.call_tool_mcp(
+                    name=tool_name, arguments=arguments
+                )
+                if getattr(result, "isError", False):
+                    message = "Tool reported an error"
+                    content = getattr(result, "content", [])
+                    if content:
+                        first = content[0]
+                        message = getattr(first, "text", str(first))
+                    raise MCPClientError(f"Tool call {tool_name} failed: {message}")
+                return cast(
+                    Dict[str, Any],
+                    result.model_dump(mode="json", exclude_none=True),
+                )
             else:
                 raise NotImplementedError("HTTP transport not supported")
         except Exception as e:
@@ -584,3 +757,7 @@ class MCPClient:
         if self._sse_client:
             await self._sse_client.close()
             self._sse_client = None
+        if self._streamable_client:
+            await self._streamable_client.__aexit__(None, None, None)
+            self._streamable_client = None
+            self._streamable_transport = None
