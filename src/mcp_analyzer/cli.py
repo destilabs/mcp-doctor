@@ -527,7 +527,7 @@ def generate_dataset(
         help="Path to JSON file describing MCP tools (alternative to --target)",
     ),
     num_tasks: int = typer.Option(
-        5, min=1, max=20, help="Number of synthetic tasks to generate"
+        5, min=1, max=200, help="Number of synthetic tasks to generate"
     ),
     model: Optional[str] = typer.Option(
         None,
@@ -758,14 +758,582 @@ def generate_dataset(
 
 
 @app.command()
-def evaluate_dataset() -> None:
-    """(Temporarily disabled)"""
-
-    console.print(
-        "[yellow]⚠️ Evaluation functionality has been temporarily disabled. "
-        "Stay tuned for future updates.[/yellow]"
+def run_dataset(
+    dataset: Path = typer.Option(
+        ...,
+        help="Path to dataset JSON file",
+    ),
+    mcp_target: str = typer.Option(
+        ...,
+        help="MCP server URL or NPX command",
+    ),
+    output: Path = typer.Option(
+        ...,
+        help="Path to save actual results JSON",
+    ),
+    provider: str = typer.Option(
+        "openai",
+        help="LLM provider to use (openai or anthropic)",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        help="Model name (defaults: gpt-4o for OpenAI, claude-3-5-sonnet-20241022 for Anthropic)",
+    ),
+    timeout: int = typer.Option(30, help="Request timeout in seconds"),
+    env_vars: Optional[str] = typer.Option(
+        None,
+        "--env-vars",
+        help='Environment variables as JSON (e.g., \'{"API_KEY": "value"}\')',
+    ),
+    env_file: Optional[Path] = typer.Option(
+        None,
+        "--env-file",
+        help="Path to a .env file whose values should be injected when running the command",
+    ),
+    api_key: Optional[str] = typer.Option(
+        None,
+        "--api-key",
+        help="API key to send as 'x-api-key' header when connecting to HTTP/SSE MCP servers",
+    ),
+    headers_json: Optional[str] = typer.Option(
+        None,
+        "--headers",
+        help='Additional HTTP headers as JSON object (e.g., \'{"Authorization": "Bearer ..."}\')',
+    ),
+    header: List[str] = typer.Option(
+        [],
+        "--header",
+        "-H",
+        help="Additional HTTP header (repeatable). Format 'Name: Value' or 'Name=Value'",
+    ),
+    working_dir: Optional[str] = typer.Option(
+        None, "--working-dir", help="Working directory for NPX command"
+    ),
+) -> None:
+    """Run dataset prompts through an LLM with actual MCP tools and capture results.
+    
+    This command connects to an MCP server, retrieves its tools, runs each dataset
+    prompt through an LLM with those tools available, and captures which tools the
+    LLM actually calls along with token usage and other metadata.
+    
+    Examples:
+    
+      # With .env file containing API keys
+      mcp-doctor run-dataset \\
+        --dataset dataset.json \\
+        --mcp-target "https://app.lemlist.com/mcp" \\
+        --output results.json
+      
+      # With explicit API keys
+      mcp-doctor run-dataset \\
+        --dataset dataset.json \\
+        --mcp-target "https://app.lemlist.com/mcp" \\
+        --output results.json \\
+        --api-key "your-mcp-key" \\
+        --provider anthropic
+      
+      # With NPX command
+      mcp-doctor run-dataset \\
+        --dataset dataset.json \\
+        --mcp-target "npx @modelcontextprotocol/server-filesystem /tmp" \\
+        --output results.json
+    """
+    try:
+        from dotenv import load_dotenv
+        if env_file:
+            load_dotenv(env_file)
+        else:
+            load_dotenv()
+    except ImportError:
+        pass
+    
+    if provider not in ["openai", "anthropic"]:
+        console.print(f"[red]❌ Invalid provider: {provider}. Use 'openai' or 'anthropic'[/red]")
+        raise typer.Exit(1)
+    
+    console.print("\n🚀 [bold blue]Run Dataset with MCP Tools[/bold blue]")
+    console.print(f"Dataset: [cyan]{dataset}[/cyan]")
+    console.print(f"MCP Target: [cyan]{mcp_target}[/cyan]")
+    console.print(f"Provider: [yellow]{provider}[/yellow]\n")
+    
+    env_from_file = _load_and_apply_env_file(env_file, console) if env_file else {}
+    
+    npx_kwargs: Dict[str, Any] = {}
+    headers_opt: Dict[str, str] = {}
+    
+    if env_from_file:
+        npx_kwargs["env_vars"] = dict(env_from_file)
+    
+    if env_vars:
+        try:
+            env_payload = json.loads(env_vars)
+        except json.JSONDecodeError as exc:
+            console.print(f"[red]❌ Invalid JSON in env-vars: {exc}[/red]")
+            raise typer.Exit(1)
+        merged_env = npx_kwargs.get("env_vars", {}).copy()
+        merged_env.update(env_payload)
+        npx_kwargs["env_vars"] = merged_env
+    
+    if headers_json:
+        try:
+            parsed = json.loads(headers_json)
+            if not isinstance(parsed, dict):
+                raise ValueError("--headers must be a JSON object")
+            headers_opt.update({str(k): str(v) for k, v in parsed.items()})
+        except (json.JSONDecodeError, ValueError) as exc:
+            console.print(f"[red]❌ Invalid JSON in --headers: {exc}[/red]")
+            raise typer.Exit(1)
+    
+    for hv in header:
+        raw = hv.strip()
+        if not raw:
+            continue
+        if ":" in raw:
+            key, value = raw.split(":", 1)
+        elif "=" in raw:
+            key, value = raw.split("=", 1)
+        else:
+            console.print(f"[yellow]⚠️  Ignoring malformed header: {hv!r}[/yellow]")
+            continue
+        headers_opt[key.strip()] = value.strip()
+    
+    if api_key and "x-api-key" not in {k.lower() for k in headers_opt}:
+        headers_opt["x-api-key"] = api_key
+    
+    # Check for API keys in env_vars or environment
+    import os
+    if "x-api-key" not in headers_opt:
+        if npx_kwargs.get("env_vars"):
+            if "LEMLIST_API_KEY" in npx_kwargs["env_vars"]:
+                headers_opt["x-api-key"] = npx_kwargs["env_vars"]["LEMLIST_API_KEY"]
+            for key in ["API_KEY", "AUTHORIZATION"]:
+                if key in npx_kwargs["env_vars"]:
+                    headers_opt["x-api-key"] = npx_kwargs["env_vars"][key]
+                    break
+        # Fallback to OS environment
+        if "x-api-key" not in headers_opt:
+            for env_key in ["LEMLIST_API_KEY", "API_KEY"]:
+                if os.getenv(env_key):
+                    headers_opt["x-api-key"] = os.getenv(env_key)
+                    break
+    
+    if working_dir:
+        npx_kwargs["working_dir"] = working_dir
+    
+    result = asyncio.run(
+        _run_dataset_with_llm(
+            dataset,
+            mcp_target,
+            output,
+            provider,
+            model,
+            timeout,
+            headers_opt if headers_opt else None,
+            npx_kwargs,
+        )
     )
-    raise typer.Exit(1)
+    
+    if result:
+        console.print(f"\n✅ Results saved to [cyan]{output}[/cyan]")
+        console.print(f"📊 Processed {len(result)} tasks")
+        
+        total_tokens = sum(
+            r.get("tokens", {}).get("total_tokens", 0) 
+            for r in result if isinstance(r, dict)
+        )
+        if total_tokens > 0:
+            console.print(f"🎯 Total tokens used: {total_tokens:,}")
+
+
+async def _run_dataset_with_llm(
+    dataset_path: Path,
+    mcp_target: str,
+    output_path: Path,
+    provider: str,
+    model: Optional[str],
+    timeout: int,
+    headers: Optional[Dict[str, str]],
+    npx_kwargs: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Run dataset through LLM with MCP tools."""
+    from .mcp_client import MCPClient
+    
+    console.print(f"[dim]Connecting to MCP server...[/dim]")
+    
+    client = MCPClient(
+        mcp_target,
+        timeout=timeout,
+        headers=headers,
+        **npx_kwargs
+    )
+    
+    try:
+        server_info = await client.get_server_info()
+        console.print(f"✅ Connected to: [green]{server_info.server_name or 'MCP Server'}[/green]")
+        console.print(f"[dim]Transport: {client._transport}[/dim]")
+        
+        tools = await client.get_tools()
+        console.print(f"✅ Retrieved {len(tools)} tools from MCP server\n")
+        
+        with open(dataset_path) as f:
+            dataset = json.load(f)
+        
+        if provider == "openai":
+            result = await _run_with_openai(dataset, tools, model, console)
+        else:
+            result = await _run_with_anthropic(dataset, tools, model, console)
+        
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+        
+        return result
+        
+    finally:
+        await client.close()
+
+
+async def _run_with_openai(
+    dataset: List[Dict[str, Any]],
+    tools: List[Any],
+    model: Optional[str],
+    console: Console,
+) -> List[Dict[str, Any]]:
+    """Run dataset through OpenAI."""
+    try:
+        from openai import OpenAI
+    except ImportError:
+        console.print("[red]❌ OpenAI SDK not installed. Run: pip install openai[/red]")
+        raise typer.Exit(1)
+    
+    model = model or "gpt-4o"
+    console.print(f"🤖 Running {len(dataset)} prompts through [cyan]{model}[/cyan]\n")
+    
+    openai_tools = _convert_tools_to_openai(tools)
+    client = OpenAI()
+    all_results = []
+    
+    for idx, task in enumerate(dataset):
+        prompt = task["prompt"]
+        console.print(f"[dim]Task {idx + 1}/{len(dataset)}:[/dim] {prompt[:60]}...")
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            tools=openai_tools,
+        )
+        
+        tool_calls = []
+        tool_call_trace = []
+        message = response.choices[0].message
+        
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append({
+                    "tool_name": tc.function.name,
+                    "arguments": [json.loads(tc.function.arguments)],
+                })
+                tool_call_trace.append({
+                    "id": tc.id,
+                    "tool_name": tc.function.name,
+                    "arguments": json.loads(tc.function.arguments),
+                })
+                console.print(f"  [green]→ Called:[/green] {tc.function.name}")
+        else:
+            console.print("  [yellow]→ No tools called[/yellow]")
+        
+        usage = response.usage
+        task_result = {
+            "query": prompt,
+            "tool_calls": tool_calls,
+            "tool_call_trace": tool_call_trace,
+            "tokens": {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            },
+            "model": model,
+            "finish_reason": response.choices[0].finish_reason,
+        }
+        
+        all_results.append(task_result)
+    
+    return all_results
+
+
+async def _run_with_anthropic(
+    dataset: List[Dict[str, Any]],
+    tools: List[Any],
+    model: Optional[str],
+    console: Console,
+) -> List[Dict[str, Any]]:
+    """Run dataset through Anthropic."""
+    try:
+        from anthropic import Anthropic
+    except ImportError:
+        console.print("[red]❌ Anthropic SDK not installed. Run: pip install anthropic[/red]")
+        raise typer.Exit(1)
+    
+    model = model or "claude-3-5-sonnet-20241022"
+    console.print(f"🤖 Running {len(dataset)} prompts through [cyan]{model}[/cyan]\n")
+    
+    anthropic_tools = _convert_tools_to_anthropic(tools)
+    client = Anthropic()
+    all_results = []
+    
+    for idx, task in enumerate(dataset):
+        prompt = task["prompt"]
+        console.print(f"[dim]Task {idx + 1}/{len(dataset)}:[/dim] {prompt[:60]}...")
+        
+        response = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+            tools=anthropic_tools,
+        )
+        
+        tool_calls = []
+        tool_call_trace = []
+        
+        for block in response.content:
+            if block.type == "tool_use":
+                tool_calls.append({
+                    "tool_name": block.name,
+                    "arguments": [block.input],
+                })
+                tool_call_trace.append({
+                    "id": block.id,
+                    "tool_name": block.name,
+                    "arguments": block.input,
+                })
+                console.print(f"  [green]→ Called:[/green] {block.name}")
+        
+        if not tool_calls:
+            console.print("  [yellow]→ No tools called[/yellow]")
+        
+        task_result = {
+            "query": prompt,
+            "tool_calls": tool_calls,
+            "tool_call_trace": tool_call_trace,
+            "tokens": {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
+            },
+            "model": model,
+            "stop_reason": response.stop_reason,
+        }
+        
+        all_results.append(task_result)
+    
+    return all_results
+
+
+def _convert_tools_to_openai(mcp_tools: List[Any]) -> List[Dict[str, Any]]:
+    """Convert MCP tools to OpenAI format."""
+    openai_tools = []
+    for tool in mcp_tools:
+        parameters = tool.parameters if hasattr(tool, 'parameters') else tool.input_schema
+        openai_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "No description",
+                "parameters": parameters or {"type": "object", "properties": {}},
+            }
+        })
+    return openai_tools
+
+
+def _convert_tools_to_anthropic(mcp_tools: List[Any]) -> List[Dict[str, Any]]:
+    """Convert MCP tools to Anthropic format."""
+    anthropic_tools = []
+    for tool in mcp_tools:
+        parameters = tool.parameters if hasattr(tool, 'parameters') else tool.input_schema
+        anthropic_tools.append({
+            "name": tool.name,
+            "description": tool.description or "No description",
+            "input_schema": parameters or {"type": "object", "properties": {}},
+        })
+    return anthropic_tools
+
+
+@app.command()
+def evaluate_dataset(
+    dataset: Path = typer.Option(
+        ...,
+        help="Path to dataset JSON file to evaluate",
+    ),
+    actual_results: Path = typer.Option(
+        ...,
+        help="Path to JSON file containing actual tool call results",
+    ),
+    evaluate_params: bool = typer.Option(
+        True,
+        "--evaluate-params/--no-evaluate-params",
+        help="Include parameter accuracy in evaluation",
+    ),
+    output_format: OutputFormat = typer.Option(
+        OutputFormat.table, help="Output format for results"
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        help="Path to save evaluation report as JSON; prints to stdout when omitted",
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show detailed output for each task"
+    ),
+) -> None:
+    """Evaluate tool calling accuracy for a dataset.
+    
+    This command compares expected tool calls in a dataset against actual LLM results
+    to measure tool calling accuracy.
+    
+    Examples:
+    
+      mcp-doctor evaluate-dataset --dataset dataset.json --actual-results results.json
+      
+      mcp-doctor evaluate-dataset --dataset dataset.json --actual-results results.json --no-evaluate-params
+    """
+    from .dataset_evaluator import (
+        EvaluationError,
+        evaluate_dataset as run_evaluation,
+        load_dataset,
+    )
+
+    console.print("\n📊 [bold blue]Dataset Evaluation[/bold blue]")
+    console.print(f"Dataset: [cyan]{dataset}[/cyan]")
+    console.print(f"Actual Results: [cyan]{actual_results}[/cyan]")
+    console.print(
+        f"Parameter Evaluation: [yellow]{'Enabled' if evaluate_params else 'Disabled'}[/yellow]\n"
+    )
+
+    try:
+        dataset_data = load_dataset(dataset)
+        
+        if not actual_results.exists():
+            console.print(f"[red]❌ Results file not found: {actual_results}[/red]")
+            raise typer.Exit(1)
+        
+        try:
+            actual_data = json.loads(actual_results.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            console.print(f"[red]❌ Invalid JSON in results file: {exc}[/red]")
+            raise typer.Exit(1)
+        
+        if not isinstance(actual_data, list):
+            console.print("[red]❌ Results file must be a JSON array[/red]")
+            raise typer.Exit(1)
+
+        report = run_evaluation(
+            dataset_data,
+            actual_data,
+            evaluate_params=evaluate_params,
+            dataset_path=str(dataset),
+        )
+
+        if output_format == OutputFormat.json:
+            if output:
+                output.write_text(
+                    json.dumps(report.to_dict(), indent=2), encoding="utf-8"
+                )
+                console.print(f"✅ Report saved to [cyan]{output}[/cyan]")
+            else:
+                console.print_json(data=report.to_dict())
+        else:
+            from rich.table import Table
+
+            summary_table = Table(title="Evaluation Summary", show_header=True)
+            summary_table.add_column("Metric", style="cyan")
+            summary_table.add_column("Value", style="green")
+
+            summary_table.add_row("Total Tasks", str(report.total_tasks))
+            summary_table.add_row(
+                "Overall Tool Accuracy", f"{report.overall_tool_accuracy:.2%}"
+            )
+            summary_table.add_row(
+                "Overall Tool Order Accuracy",
+                f"{report.overall_tool_order_accuracy:.2%}",
+            )
+            if report.overall_param_accuracy is not None:
+                summary_table.add_row(
+                    "Overall Parameter Accuracy",
+                    f"{report.overall_param_accuracy:.2%}",
+                )
+            summary_table.add_row("Perfect Matches", str(report.perfect_matches))
+            summary_table.add_row(
+                "Tool-Only Matches", str(report.tool_only_matches)
+            )
+
+            console.print(summary_table)
+
+            if verbose:
+                console.print("\n[bold]Task-by-Task Results:[/bold]\n")
+                for idx, task_eval in enumerate(report.task_evaluations):
+                    task_info = actual_data[idx] if isinstance(actual_data[idx], dict) else {}
+                    
+                    title = f"Task {task_eval.task_index}: {task_eval.prompt[:60]}..."
+                    if task_info.get("tokens"):
+                        tokens = task_info["tokens"]
+                        total = tokens.get("total_tokens", 0)
+                        title += f" [{total} tokens]"
+                    
+                    task_table = Table(
+                        title=title,
+                        show_header=True,
+                    )
+                    task_table.add_column("Position", style="cyan")
+                    task_table.add_column("Expected Tool", style="yellow")
+                    task_table.add_column("Actual Tool", style="magenta")
+                    task_table.add_column("Tool Match", style="green")
+                    if evaluate_params:
+                        task_table.add_column("Params Match", style="blue")
+
+                    for match_idx, match in enumerate(task_eval.tool_matches):
+                        row = [
+                            str(match_idx),
+                            match.expected_tool,
+                            match.actual_tool or "<none>",
+                            "✓" if match.tool_match else "✗",
+                        ]
+                        if evaluate_params:
+                            if match.params_match is None:
+                                row.append("N/A")
+                            else:
+                                row.append("✓" if match.params_match else "✗")
+                        task_table.add_row(*row)
+
+                    console.print(task_table)
+                    
+                    metrics_line = (
+                        f"  Tool Accuracy: {task_eval.tool_accuracy:.2%}, "
+                        f"Order Accuracy: {task_eval.tool_order_accuracy:.2%}"
+                    )
+                    if task_eval.param_accuracy is not None:
+                        metrics_line += f", Param Accuracy: {task_eval.param_accuracy:.2%}"
+                    
+                    if task_info.get("tokens"):
+                        tokens = task_info["tokens"]
+                        metrics_line += (
+                            f"\n  Tokens: {tokens.get('prompt_tokens') or tokens.get('input_tokens', 0)} input, "
+                            f"{tokens.get('completion_tokens') or tokens.get('output_tokens', 0)} output, "
+                            f"{tokens.get('total_tokens', 0)} total"
+                        )
+                    
+                    if task_info.get("model"):
+                        metrics_line += f"\n  Model: {task_info['model']}"
+                    
+                    console.print(metrics_line + "\n")
+
+            if output:
+                output.write_text(
+                    json.dumps(report.to_dict(), indent=2), encoding="utf-8"
+                )
+                console.print(f"\n✅ Report saved to [cyan]{output}[/cyan]")
+
+    except EvaluationError as exc:
+        console.print(f"[red]❌ {exc}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()

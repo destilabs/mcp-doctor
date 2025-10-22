@@ -1,0 +1,67 @@
+[
+  [
+    {
+      "tool_name": "get_campaigns",
+      "arguments": [
+        {}
+      ]
+    }
+  ],
+  [
+    {
+      "tool_name": "get_campaigns",
+      "arguments": [
+        {}
+      ]
+    }
+  ],
+  [
+    {
+      "tool_name": "get_campaigns",
+      "arguments": [
+        {}
+      ]
+    }
+  ],
+  [],
+  [],
+  [
+    {
+      "tool_name": "get_lemleads_filters",
+      "arguments": [
+        {}
+      ]
+    }
+  ],
+  [
+    {
+      "tool_name": "get_lemleads_filters",
+      "arguments": [
+        {}
+      ]
+    }
+  ],
+  [],
+  [
+    {
+      "tool_name": "preview_sequence_update",
+      "arguments": [
+        {
+          "campaignId": "cam_789",
+          "stepId": "stp_123",
+          "newSubject": "Updated Subject",
+          "newBody": "Updated Body",
+          "userConfirmed": false
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "tool_name": "get_team_members",
+      "arguments": [
+        {}
+      ]
+    }
+  ]
+]

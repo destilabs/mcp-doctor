@@ -1,0 +1,191 @@
+[
+  {
+    "prompt": "Get a list of all running campaigns and show their lead counts.",
+    "tools_called": [
+      "get_campaigns"
+    ],
+    "tools_args": [
+      [
+        {
+          "status": "running",
+          "limit": 50
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Fetch the email sequences for the most recent campaign.",
+    "tools_called": [
+      "get_campaigns",
+      "get_campaign_sequences"
+    ],
+    "tools_args": [
+      [
+        {
+          "limit": 1
+        }
+      ],
+      [
+        {
+          "campaignId": "{{get_campaigns[0].id}}"
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Compare performance stats for the three campaigns with the most leads.",
+    "tools_called": [
+      "get_campaigns",
+      "get_campaigns_reports"
+    ],
+    "tools_args": [
+      [
+        {
+          "limit": 100
+        }
+      ],
+      [
+        {
+          "campaignIds": [
+            "{{top3_campaign_ids_by_leads}}"
+          ]
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Get detailed stats for a specific campaign for last month.",
+    "tools_called": [
+      "get_campaign_stats"
+    ],
+    "tools_args": [
+      [
+        {
+          "campaignId": "cam_abc123",
+          "startDate": "2024-05-01",
+          "endDate": "2024-05-31"
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Add a new lead with enrichment to campaign cam_457def.",
+    "tools_called": [
+      "add_lead_to_campaign"
+    ],
+    "tools_args": [
+      [
+        {
+          "campaignId": "cam_457def",
+          "firstName": "Jane",
+          "lastName": "Doe",
+          "companyName": "Tech Solutions",
+          "linkedinUrl": "https://linkedin.com/in/janedoe",
+          "findEmail": true,
+          "linkedinEnrichment": true
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Get all available filters for Lemleads search.",
+    "tools_called": [
+      "get_lemleads_filters"
+    ],
+    "tools_args": [
+      [
+        {}
+      ]
+    ]
+  },
+  {
+    "prompt": "Find all CTOs in the United States at SaaS companies.",
+    "tools_called": [
+      "lemleads_search"
+    ],
+    "tools_args": [
+      [
+        {
+          "mode": "people",
+          "filters": [
+            {
+              "filterId": "seniority",
+              "in": [
+                "CxO"
+              ],
+              "out": []
+            },
+            {
+              "filterId": "currentTitle",
+              "in": [
+                "CTO"
+              ],
+              "out": []
+            },
+            {
+              "filterId": "country",
+              "in": [
+                "United States"
+              ],
+              "out": []
+            },
+            {
+              "filterId": "industry",
+              "in": [
+                "SaaS"
+              ],
+              "out": []
+            }
+          ],
+          "page": 1,
+          "size": 20
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Create a new sales outreach campaign with a personalized opening email.",
+    "tools_called": [
+      "create_campaign_with_sequence"
+    ],
+    "tools_args": [
+      [
+        {
+          "name": "SaaS Sales Outreach",
+          "subject": "Scale your SaaS, {{ firstName }}?",
+          "body": "Hey {{ firstName }},\nWe help SaaS companies grow faster\u2014would you like a quick demo?",
+          "emoji": "\ud83d\ude80",
+          "timezone": "America/New_York"
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Preview an update to step stp_123 of sequence seq_456 in campaign cam_789.",
+    "tools_called": [
+      "preview_sequence_update"
+    ],
+    "tools_args": [
+      [
+        {
+          "sequenceId": "seq_456",
+          "stepId": "stp_123",
+          "campaignId": "cam_789",
+          "newSubject": "Excited to hear your thoughts, {{ firstName }}!",
+          "newMessage": "Hi {{ firstName }},\nJust wanted to follow up on my last email\u2014any questions?"
+        }
+      ]
+    ]
+  },
+  {
+    "prompt": "Get team member emails and details from your lemlist account.",
+    "tools_called": [
+      "get_team_members"
+    ],
+    "tools_args": [
+      [
+        {}
+      ]
+    ]
+  }
+]

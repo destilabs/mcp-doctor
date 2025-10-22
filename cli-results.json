@@ -1,0 +1,219 @@
+[
+  {
+    "query": "Get a list of all running campaigns and show their lead counts.",
+    "tool_calls": [
+      {
+        "tool_name": "get_campaigns",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_He039oolJJXU32DrFGQpgPDe",
+        "tool_name": "get_campaigns",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2749,
+      "completion_tokens": 11,
+      "total_tokens": 2760
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Fetch the email sequences for the most recent campaign.",
+    "tool_calls": [
+      {
+        "tool_name": "get_campaigns",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_JkIsYa0wSncWrhTQhuIrTeYC",
+        "tool_name": "get_campaigns",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2746,
+      "completion_tokens": 11,
+      "total_tokens": 2757
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Compare performance stats for the three campaigns with the most leads.",
+    "tool_calls": [
+      {
+        "tool_name": "get_campaigns",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_Xm1fI5xiBcP9dEGdJNIhO2Fx",
+        "tool_name": "get_campaigns",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2748,
+      "completion_tokens": 11,
+      "total_tokens": 2759
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Get detailed stats for a specific campaign for last month.",
+    "tool_calls": [],
+    "tool_call_trace": [],
+    "tokens": {
+      "prompt_tokens": 2747,
+      "completion_tokens": 55,
+      "total_tokens": 2802
+    },
+    "model": "gpt-4o",
+    "finish_reason": "stop"
+  },
+  {
+    "query": "Add a new lead with enrichment to campaign cam_457def.",
+    "tool_calls": [],
+    "tool_call_trace": [],
+    "tokens": {
+      "prompt_tokens": 2749,
+      "completion_tokens": 108,
+      "total_tokens": 2857
+    },
+    "model": "gpt-4o",
+    "finish_reason": "stop"
+  },
+  {
+    "query": "Get all available filters for Lemleads search.",
+    "tool_calls": [
+      {
+        "tool_name": "get_lemleads_filters",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_6LHpsTz9ArNIUzw9XSrbay4w",
+        "tool_name": "get_lemleads_filters",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2746,
+      "completion_tokens": 14,
+      "total_tokens": 2760
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Find all CTOs in the United States at SaaS companies.",
+    "tool_calls": [
+      {
+        "tool_name": "get_lemleads_filters",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_VMQBA6nOgYKg89dUQv1Q2hhN",
+        "tool_name": "get_lemleads_filters",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2749,
+      "completion_tokens": 14,
+      "total_tokens": 2763
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Create a new sales outreach campaign with a personalized opening email.",
+    "tool_calls": [],
+    "tool_call_trace": [],
+    "tokens": {
+      "prompt_tokens": 2748,
+      "completion_tokens": 114,
+      "total_tokens": 2862
+    },
+    "model": "gpt-4o",
+    "finish_reason": "stop"
+  },
+  {
+    "query": "Preview an update to step stp_123 of sequence seq_456 in campaign cam_789.",
+    "tool_calls": [
+      {
+        "tool_name": "preview_sequence_update",
+        "arguments": [
+          {
+            "campaignId": "cam_789",
+            "stepId": "stp_123"
+          }
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_8qeYDNP2sXiMAX5o0CMFcNjg",
+        "tool_name": "preview_sequence_update",
+        "arguments": {
+          "campaignId": "cam_789",
+          "stepId": "stp_123"
+        }
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2756,
+      "completion_tokens": 26,
+      "total_tokens": 2782
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  },
+  {
+    "query": "Get team member emails and details from your lemlist account.",
+    "tool_calls": [
+      {
+        "tool_name": "get_team_members",
+        "arguments": [
+          {}
+        ]
+      }
+    ],
+    "tool_call_trace": [
+      {
+        "id": "call_cBqmg5fWoXsPrerN9ysppZ9H",
+        "tool_name": "get_team_members",
+        "arguments": {}
+      }
+    ],
+    "tokens": {
+      "prompt_tokens": 2749,
+      "completion_tokens": 11,
+      "total_tokens": 2760
+    },
+    "model": "gpt-4o",
+    "finish_reason": "tool_calls"
+  }
+]

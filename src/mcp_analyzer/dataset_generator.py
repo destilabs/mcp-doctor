@@ -230,7 +230,7 @@ class DatasetGenerator:
         *,
         llm_client: Optional[LLMClient] = None,
         model: Optional[str] = None,
-        max_tasks: int = 20,
+        max_tasks: int = 200,
         llm_timeout: float = 60.0,
     ) -> None:
         self.max_tasks = max_tasks

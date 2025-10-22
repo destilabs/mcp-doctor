@@ -577,17 +577,147 @@ def test_cli_generate_dataset_langsmith_reuse(monkeypatch, tmp_path) -> None:
     )
 
 
-def test_cli_evaluate_dataset_disabled(monkeypatch) -> None:
+def test_cli_evaluate_dataset_disabled(monkeypatch, tmp_path) -> None:
+    """Test that evaluate-dataset command works with basic dataset."""
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
 
-    result = runner.invoke(cli.app, ["evaluate-dataset"])
+    dataset_file = tmp_path / "dataset.json"
+    results_file = tmp_path / "results.json"
+    
+    dataset_file.write_text(json.dumps([
+        {
+            "prompt": "Test",
+            "tools_called": ["tool1"],
+            "tools_args": [[{}]]
+        }
+    ]))
+    
+    results_file.write_text(json.dumps([
+        [{"tool_name": "tool1", "arguments": [{}]}]
+    ]))
+
+    result = runner.invoke(cli.app, [
+        "evaluate-dataset",
+        "--dataset", str(dataset_file),
+        "--actual-results", str(results_file),
+    ])
+
+    assert result.exit_code == 0
+    assert any("Dataset Evaluation" in msg for msg in dummy_console.messages)
+
+
+def test_cli_evaluate_dataset_missing_results_file(monkeypatch, tmp_path) -> None:
+    """Test evaluate-dataset with missing results file."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    dataset_file = tmp_path / "dataset.json"
+    results_file = tmp_path / "nonexistent.json"
+    
+    dataset_file.write_text(json.dumps([
+        {"prompt": "Test", "tools_called": ["tool1"], "tools_args": [[]]}
+    ]))
+
+    result = runner.invoke(cli.app, [
+        "evaluate-dataset",
+        "--dataset", str(dataset_file),
+        "--actual-results", str(results_file),
+    ])
 
     assert result.exit_code != 0
-    assert any(
-        "Evaluation functionality has been temporarily disabled" in msg
-        for msg in dummy_console.messages
-    )
+    assert any("Results file not found" in msg for msg in dummy_console.messages)
+
+
+def test_cli_evaluate_dataset_invalid_results_json(monkeypatch, tmp_path) -> None:
+    """Test evaluate-dataset with invalid JSON in results file."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    dataset_file = tmp_path / "dataset.json"
+    results_file = tmp_path / "results.json"
+    
+    dataset_file.write_text(json.dumps([
+        {"prompt": "Test", "tools_called": ["tool1"], "tools_args": [[]]}
+    ]))
+    results_file.write_text("not valid json")
+
+    result = runner.invoke(cli.app, [
+        "evaluate-dataset",
+        "--dataset", str(dataset_file),
+        "--actual-results", str(results_file),
+    ])
+
+    assert result.exit_code != 0
+    assert any("Invalid JSON in results file" in msg for msg in dummy_console.messages)
+
+
+def test_cli_evaluate_dataset_no_params(monkeypatch, tmp_path) -> None:
+    """Test evaluate-dataset with --no-evaluate-params flag."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    dataset_file = tmp_path / "dataset.json"
+    results_file = tmp_path / "results.json"
+    
+    dataset_file.write_text(json.dumps([
+        {
+            "prompt": "Test",
+            "tools_called": ["tool1"],
+            "tools_args": [[{"key": "expected"}]]
+        }
+    ]))
+    
+    results_file.write_text(json.dumps([
+        [{"tool_name": "tool1", "arguments": [{"key": "different"}]}]
+    ]))
+
+    result = runner.invoke(cli.app, [
+        "evaluate-dataset",
+        "--dataset", str(dataset_file),
+        "--actual-results", str(results_file),
+        "--no-evaluate-params",
+    ])
+
+    assert result.exit_code == 0
+    assert any("Disabled" in msg for msg in dummy_console.messages)
+
+
+def test_cli_evaluate_dataset_json_output(monkeypatch, tmp_path) -> None:
+    """Test evaluate-dataset with JSON output format."""
+    dummy_console = DummyConsole()
+    monkeypatch.setattr(cli, "console", dummy_console)
+
+    dataset_file = tmp_path / "dataset.json"
+    results_file = tmp_path / "results.json"
+    output_file = tmp_path / "report.json"
+    
+    dataset_file.write_text(json.dumps([
+        {
+            "prompt": "Test",
+            "tools_called": ["tool1"],
+            "tools_args": [[{}]]
+        }
+    ]))
+    
+    results_file.write_text(json.dumps([
+        [{"tool_name": "tool1", "arguments": [{}]}]
+    ]))
+
+    result = runner.invoke(cli.app, [
+        "evaluate-dataset",
+        "--dataset", str(dataset_file),
+        "--actual-results", str(results_file),
+        "--output-format", "json",
+        "--output", str(output_file),
+    ])
+
+    assert result.exit_code == 0
+    assert output_file.exists()
+    
+    report_data = json.loads(output_file.read_text())
+    assert "total_tasks" in report_data
+    assert report_data["total_tasks"] == 1
 
 
 def test_cli_generate_dataset_langsmith_upload_error(monkeypatch, tmp_path) -> None:
