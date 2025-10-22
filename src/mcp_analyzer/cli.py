@@ -554,6 +554,22 @@ def generate_dataset(
         "--no-env-logging",
         help="Disable environment variable logging for security",
     ),
+    api_key: Optional[str] = typer.Option(
+        None,
+        "--api-key",
+        help="API key to send as 'x-api-key' header when connecting to HTTP/SSE MCP servers",
+    ),
+    headers_json: Optional[str] = typer.Option(
+        None,
+        "--headers",
+        help='Additional HTTP headers as JSON object (e.g., \'{"Authorization": "Bearer ..."}\')',
+    ),
+    header: List[str] = typer.Option(
+        [],
+        "--header",
+        "-H",
+        help="Additional HTTP header (repeatable). Format 'Name: Value' or 'Name=Value'",
+    ),
     output: Optional[Path] = typer.Option(
         None,
         "--output",
@@ -625,7 +641,58 @@ def generate_dataset(
             if no_env_logging:
                 npx_kwargs["log_env_vars"] = False
 
-            tools = asyncio.run(fetch_tools_for_dataset(target, timeout, npx_kwargs))
+            headers_opt: Dict[str, str] = {}
+            if headers_json:
+                try:
+                    parsed = json.loads(headers_json)
+                    if not isinstance(parsed, dict):
+                        raise ValueError(
+                            "--headers must be a JSON object mapping header names to values"
+                        )
+                    headers_opt.update({str(k): str(v) for k, v in parsed.items()})
+                except json.JSONDecodeError as exc:
+                    raise DatasetGenerationError(f"Invalid JSON in --headers: {exc}")
+                except ValueError as exc:
+                    raise DatasetGenerationError(str(exc))
+
+            for hv in header:
+                raw = hv.strip()
+                if not raw:
+                    continue
+                key: Optional[str] = None
+                value: Optional[str] = None
+                if ":" in raw:
+                    key, value = raw.split(":", 1)
+                elif "=" in raw:
+                    key, value = raw.split("=", 1)
+                else:
+                    console.print(
+                        f"[yellow]⚠️ Ignoring malformed --header entry (use 'Name: Value' or 'Name=Value'): {hv!r}[/yellow]"
+                    )
+                    continue
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    console.print(
+                        f"[yellow]⚠️ Ignoring --header with empty name: {hv!r}[/yellow]"
+                    )
+                    continue
+                headers_opt[key] = value
+
+            lower_header_keys = {k.lower() for k in headers_opt}
+            if api_key and "x-api-key" not in lower_header_keys:
+                headers_opt["x-api-key"] = api_key
+
+            headers_payload = headers_opt if headers_opt else None
+
+            tools = asyncio.run(
+                fetch_tools_for_dataset(
+                    target,
+                    timeout,
+                    npx_kwargs,
+                    headers=headers_payload,
+                )
+            )
         else:
             assert tools_file is not None  # narrow type for mypy
             tools = load_tools_from_file(tools_file)

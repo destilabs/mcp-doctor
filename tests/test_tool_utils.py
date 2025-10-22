@@ -115,6 +115,7 @@ async def test_fetch_tools_for_dataset_uses_client(
         target="npx something" if is_npx else "http://localhost:9999/mcp",
         timeout=15,
         npx_kwargs={"env_vars": {"TOKEN": "abc"}},
+        headers={"Authorization": "Bearer demo"},
     )
 
     assert len(tools) == 2
@@ -134,3 +135,6 @@ async def test_fetch_tools_for_dataset_uses_client(
     assert FakeClient.last_instance.timeout == 15
     assert FakeClient.last_instance.closed is True
     assert FakeClient.last_instance.kwargs.get("env_vars") == {"TOKEN": "abc"}
+    assert FakeClient.last_instance.kwargs.get("headers") == {
+        "Authorization": "Bearer demo"
+    }

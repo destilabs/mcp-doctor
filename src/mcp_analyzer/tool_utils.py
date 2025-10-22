@@ -56,14 +56,18 @@ def load_tools_from_file(tools_file: Path) -> List[MCPTool]:
 
 
 async def fetch_tools_for_dataset(
-    target: str, timeout: int, npx_kwargs: Optional[Dict[str, Any]] = None
+    target: str,
+    timeout: int,
+    npx_kwargs: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Optional[Dict[str, str]] = None,
 ) -> List[MCPTool]:
     """Fetch MCP tools from a running server or NPX command."""
 
     if npx_kwargs is None:
         npx_kwargs = {}
 
-    client = MCPClient(target, timeout=timeout, **npx_kwargs)
+    client = MCPClient(target, timeout=timeout, headers=headers, **npx_kwargs)
     is_npx = is_npx_command(target)
 
     status_message = (

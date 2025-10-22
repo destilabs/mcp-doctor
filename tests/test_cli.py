@@ -305,8 +305,8 @@ def test_cli_generate_dataset_from_target(monkeypatch, tmp_path) -> None:
     dummy_console = DummyConsole()
     monkeypatch.setattr(cli, "console", dummy_console)
 
-    async def fake_fetch(target, timeout, npx_kwargs):
-        fake_fetch.called = (target, timeout, npx_kwargs)
+    async def fake_fetch(target, timeout, npx_kwargs, headers=None):
+        fake_fetch.called = (target, timeout, npx_kwargs, headers)
         return ["tool-a"]
 
     fake_fetch.called = None
@@ -341,6 +341,12 @@ def test_cli_generate_dataset_from_target(monkeypatch, tmp_path) -> None:
             "--working-dir",
             str(tmp_path),
             "--no-env-logging",
+            "--headers",
+            '{"Authorization": "Bearer xyz"}',
+            "--header",
+            "X-Trace: 123",
+            "--api-key",
+            "secret-key",
             "--output",
             str(output_path),
             "--model",
@@ -358,6 +364,11 @@ def test_cli_generate_dataset_from_target(monkeypatch, tmp_path) -> None:
         "env_vars": {"FROM_FILE": "1", "TOKEN": "xyz"},
         "working_dir": str(tmp_path),
         "log_env_vars": False,
+    }
+    assert fake_fetch.called[3] == {
+        "Authorization": "Bearer xyz",
+        "X-Trace": "123",
+        "x-api-key": "secret-key",
     }
     assert StubGenerator.created == ("gpt", 20.0)
     assert StubGenerator.received[1] == 3
