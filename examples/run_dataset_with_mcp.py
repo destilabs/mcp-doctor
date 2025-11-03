@@ -147,7 +147,7 @@ async def run_dataset_with_anthropic(
     dataset_path: Path,
     mcp_target: str,
     output_path: Path,
-    model: str = "claude-3-5-sonnet-20241022",
+    model: str = "claude-sonnet-4-20250514",
     timeout: int = 30,
     env_vars: Optional[Dict[str, str]] = None,
 ) -> None:
@@ -331,7 +331,7 @@ async def main():
     )
     parser.add_argument(
         "--model",
-        help="Model name (defaults: gpt-4o for OpenAI, claude-3-5-sonnet-20241022 for Anthropic)",
+        help="Model name (defaults: gpt-4o for OpenAI, claude-sonnet-4-20250514 for Anthropic)",
     )
     parser.add_argument(
         "--timeout",
@@ -363,7 +363,7 @@ async def main():
             env_vars=env_vars,
         )
     else:
-        model = args.model or "claude-3-5-sonnet-20241022"
+        model = args.model or "claude-sonnet-4-20250514"
         await run_dataset_with_anthropic(
             args.dataset,
             args.mcp_target,

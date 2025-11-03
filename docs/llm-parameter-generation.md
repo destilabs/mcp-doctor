@@ -71,13 +71,13 @@ mcp-doctor analyze \
   --target "https://mcp.explorium.ai/sse" \
   --oauth \
   --check token_efficiency \
-  --llm-model claude-3-5-sonnet-20241022
+  --llm-model claude-sonnet-4-20250514
 ```
 
 **Available models:**
 - `gpt-4o-mini` (default, best cost/performance)
 - `gpt-4o` (most capable)
-- `claude-3-5-sonnet-20241022` (Anthropic's best)
+- `claude-sonnet-4-20250514` (Anthropic's latest)
 - `claude-3-5-haiku-20241022` (Anthropic's fast model)
 
 ## How It Works

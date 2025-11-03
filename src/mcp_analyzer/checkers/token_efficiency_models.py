@@ -46,7 +46,7 @@ class LLMParameterGenerator:
         Initialize the parameter generator.
 
         Args:
-            model: Model to use (gpt-4o-mini, gpt-4o, claude-3-5-sonnet-20241022, etc.)
+            model: Model to use (gpt-4o-mini, gpt-4o, claude-sonnet-4-20250514, etc.)
         """
         self.model = model
         self._client: Any = None

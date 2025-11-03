@@ -245,6 +245,8 @@ scratch_*.py
 config.local.json
 settings.local.json
 .env.local
+server_providers.json
+server_providers.local.json
 
 # Log files
 *.log

@@ -210,7 +210,7 @@ def analyze(
     llm_model: str = typer.Option(
         "gpt-4o-mini",
         "--llm-model",
-        help="LLM model for parameter generation when validation fails (gpt-4o-mini, gpt-4o, claude-3-5-sonnet-20241022)",
+        help="LLM model for parameter generation when validation fails (gpt-4o-mini, gpt-4o, claude-sonnet-4-20250514)",
     ),
     cache_tool_calls: bool = typer.Option(
         True,
@@ -777,7 +777,7 @@ def run_dataset(
     ),
     model: Optional[str] = typer.Option(
         None,
-        help="Model name (defaults: gpt-4o for OpenAI, claude-3-5-sonnet-20241022 for Anthropic)",
+        help="Model name (defaults: gpt-4o for OpenAI, claude-sonnet-4-20250514 for Anthropic)",
     ),
     timeout: int = typer.Option(30, help="Request timeout in seconds"),
     env_vars: Optional[str] = typer.Option(
@@ -821,13 +821,13 @@ def run_dataset(
       # With .env file containing API keys
       mcp-doctor run-dataset \\
         --dataset dataset.json \\
-        --mcp-target "https://app.lemlist.com/mcp" \\
+        --mcp-target "https://api.example.com/mcp" \\
         --output results.json
       
       # With explicit API keys
       mcp-doctor run-dataset \\
         --dataset dataset.json \\
-        --mcp-target "https://app.lemlist.com/mcp" \\
+        --mcp-target "https://api.example.com/mcp" \\
         --output results.json \\
         --api-key "your-mcp-key" \\
         --provider anthropic
@@ -904,18 +904,13 @@ def run_dataset(
     import os
     if "x-api-key" not in headers_opt:
         if npx_kwargs.get("env_vars"):
-            if "LEMLIST_API_KEY" in npx_kwargs["env_vars"]:
-                headers_opt["x-api-key"] = npx_kwargs["env_vars"]["LEMLIST_API_KEY"]
             for key in ["API_KEY", "AUTHORIZATION"]:
                 if key in npx_kwargs["env_vars"]:
                     headers_opt["x-api-key"] = npx_kwargs["env_vars"][key]
                     break
-        # Fallback to OS environment
         if "x-api-key" not in headers_opt:
-            for env_key in ["LEMLIST_API_KEY", "API_KEY"]:
-                if os.getenv(env_key):
-                    headers_opt["x-api-key"] = os.getenv(env_key)
-                    break
+            if os.getenv("API_KEY"):
+                headers_opt["x-api-key"] = os.getenv("API_KEY")
     
     if working_dir:
         npx_kwargs["working_dir"] = working_dir
@@ -1073,7 +1068,7 @@ async def _run_with_anthropic(
         console.print("[red]❌ Anthropic SDK not installed. Run: pip install anthropic[/red]")
         raise typer.Exit(1)
     
-    model = model or "claude-3-5-sonnet-20241022"
+    model = model or "claude-sonnet-4-20250514"
     console.print(f"🤖 Running {len(dataset)} prompts through [cyan]{model}[/cyan]\n")
     
     anthropic_tools = _convert_tools_to_anthropic(tools)
