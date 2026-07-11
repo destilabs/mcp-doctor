@@ -110,6 +110,23 @@ class TestTokenEfficiencyChecker:
         bool_value = self.checker._generate_sample_value("enabled", bool_schema)
         assert bool_value is True
 
+        # Enum-constrained parameter: must return one of the allowed values,
+        # not a generic type-based guess that the server would reject.
+        enum_schema = {
+            "type": "string",
+            "enum": ["No emulation", "Slow 3G", "Fast 3G", "Slow 4G", "Fast 4G"],
+        }
+        enum_value = self.checker._generate_sample_value(
+            "throttlingOption", enum_schema
+        )
+        assert enum_value == "No emulation"
+
+        # Enum takes priority even when the parameter name would otherwise
+        # match a contextual pattern (e.g. "id" -> "sample_id").
+        enum_id_schema = {"type": "string", "enum": ["primary", "secondary"]}
+        enum_id_value = self.checker._generate_sample_value("id", enum_id_schema)
+        assert enum_id_value == "primary"
+
     def test_generate_test_scenarios(self):
         """Test test scenario generation."""
         # Tool with parameters
@@ -324,6 +341,89 @@ class TestTokenEfficiencyChecker:
         assert IssueType.VERBOSE_IDENTIFIERS in issue_types
         assert IssueType.REDUNDANT_DATA in issue_types
 
+    def test_analyze_response_metrics_reports_execution_failures(self):
+        """A tool that fails most of its test scenarios must surface an
+        EXECUTION_FAILURE issue instead of silently dropping out of analysis
+        (see #14: this previously let a fully-broken tool report as if it
+        had "good token efficiency")."""
+        mock_metrics = MagicMock()
+        mock_metrics.tool_name = "flaky_tool"
+        mock_metrics.measurements = [
+            ResponseMetric(
+                scenario="minimal",
+                token_count=0,
+                response_time=0,
+                response_size_bytes=0,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+                error="Invalid enum value",
+            ),
+            ResponseMetric(
+                scenario="typical",
+                token_count=0,
+                response_time=0,
+                response_size_bytes=0,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+                error="Invalid enum value",
+            ),
+            ResponseMetric(
+                scenario="large",
+                token_count=200,
+                response_time=0.2,
+                response_size_bytes=800,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+            ),
+        ]
+
+        issues = self.checker._analyze_response_metrics(mock_metrics)
+
+        failure_issues = [
+            i for i in issues if i.issue_type == IssueType.EXECUTION_FAILURE
+        ]
+        assert len(failure_issues) == 1
+        assert failure_issues[0].severity == Severity.ERROR
+        assert failure_issues[0].tool_name == "flaky_tool"
+        assert "2/3" in failure_issues[0].message
+
+    def test_analyze_response_metrics_no_failure_issue_below_threshold(self):
+        """A single flaky scenario out of several shouldn't trip the
+        systematic-failure check — only report it once failures dominate."""
+        mock_metrics = MagicMock()
+        mock_metrics.tool_name = "mostly_fine_tool"
+        mock_metrics.measurements = [
+            ResponseMetric(
+                scenario="minimal",
+                token_count=100,
+                response_time=0.1,
+                response_size_bytes=400,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+            ),
+            ResponseMetric(
+                scenario="typical",
+                token_count=150,
+                response_time=0.1,
+                response_size_bytes=600,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+            ),
+            ResponseMetric(
+                scenario="large",
+                token_count=0,
+                response_time=0,
+                response_size_bytes=0,
+                contains_low_value_data=False,
+                has_verbose_identifiers=False,
+                error="Transient network error",
+            ),
+        ]
+
+        issues = self.checker._analyze_response_metrics(mock_metrics)
+
+        assert not any(i.issue_type == IssueType.EXECUTION_FAILURE for i in issues)
+
     def test_generate_recommendations(self):
         """Test recommendation generation."""
         issues = [
@@ -370,3 +470,24 @@ class TestTokenEfficiencyChecker:
 
         assert len(recommendations) == 1
         assert "good token efficiency" in recommendations[0].lower()
+
+    def test_generate_recommendations_with_execution_failures(self):
+        """An EXECUTION_FAILURE issue must produce a real recommendation,
+        not the "all tools show good efficiency" fallback (see #14)."""
+        issues = [
+            TokenEfficiencyIssue(
+                tool_name="flaky_tool",
+                issue_type=IssueType.EXECUTION_FAILURE,
+                severity=Severity.ERROR,
+                message="Tool failed to execute in 2/3 test scenarios",
+                suggestion="Check the execution errors above",
+            ),
+        ]
+        stats = {"max_tokens_observed": 0}
+
+        recommendations = self.checker._generate_recommendations(issues, stats)
+
+        assert not any(
+            "good token efficiency" in rec.lower() for rec in recommendations
+        )
+        assert any("failed execution" in rec.lower() for rec in recommendations)
