@@ -28,6 +28,7 @@ class IssueType(str, Enum):
     POOR_DEFAULT_LIMITS = "poor_default_limits"
     MISSING_TRUNCATION = "missing_truncation"
     NO_RESPONSE_FORMAT_CONTROL = "no_response_format_control"
+    EXECUTION_FAILURE = "execution_failure"
 
 
 class Severity(str, Enum):
@@ -593,6 +594,35 @@ class TokenEfficiencyChecker:
         """Analyze response metrics to identify efficiency issues."""
         issues = []
 
+        # Check for systematic execution failures. Failed measurements are
+        # excluded from the token-count aggregates further down (there's no
+        # token count to aggregate), but that must not make the failures
+        # invisible — otherwise a tool that fails every scenario (e.g. its
+        # enum-constrained parameters reject the generated sample values)
+        # silently drops out of analysis instead of being reported.
+        failed_measurements = [m for m in metrics.measurements if m.error is not None]
+        if (
+            metrics.measurements
+            and len(failed_measurements) / len(metrics.measurements) >= 0.5
+        ):
+            issues.append(
+                TokenEfficiencyIssue(
+                    tool_name=metrics.tool_name,
+                    issue_type=IssueType.EXECUTION_FAILURE,
+                    severity=Severity.ERROR,
+                    message=(
+                        f"Tool failed to execute in {len(failed_measurements)}/"
+                        f"{len(metrics.measurements)} test scenarios, so token "
+                        "efficiency could not be fully measured"
+                    ),
+                    suggestion=(
+                        "Check the execution errors above — the tool may require "
+                        "specific enum values, formats, or parameter combinations "
+                        "that the analyzer's generated sample values don't satisfy"
+                    ),
+                )
+            )
+
         # Check for oversized responses
         for measurement in metrics.measurements:
             if measurement.token_count > self.max_recommended_tokens:
@@ -775,6 +805,13 @@ class TokenEfficiencyChecker:
         self, param_name: str, param_schema: Dict[str, Any]
     ) -> Any:
         """Generate a sample value for a parameter based on its schema."""
+        # Enum-constrained parameters reject any value outside the enum, so a
+        # generic type-based guess (e.g. "sample_value") fails validation and
+        # the tool call errors out before token efficiency can be measured.
+        enum_values = param_schema.get("enum")
+        if enum_values:
+            return enum_values[0]
+
         param_type = param_schema.get("type", "string")
 
         if param_type == "string":
@@ -970,6 +1007,14 @@ class TokenEfficiencyChecker:
             count = issue_counts[IssueType.NO_RESPONSE_FORMAT_CONTROL]
             recommendations.append(
                 f"Add response format control (concise/detailed) to {count} tools"
+            )
+
+        if issue_counts.get(IssueType.EXECUTION_FAILURE, 0) > 0:
+            count = issue_counts[IssueType.EXECUTION_FAILURE]
+            recommendations.append(
+                f"{count} tool(s) failed execution during testing and could not be "
+                "fully analyzed for token efficiency — review the execution errors "
+                "before trusting the efficiency results for those tools"
             )
 
         # General recommendations based on stats
