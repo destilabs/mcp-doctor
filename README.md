@@ -319,7 +319,7 @@ mcp-doctor analyze [OPTIONS]
 
 **Options:**
 - `--target TEXT` (required): MCP server URL or NPX command to diagnose
-- `--check {descriptions,token_efficiency,all}`: Type of diagnosis to run (default: descriptions)
+- `--check {descriptions,token_efficiency,security,all}`: Type of diagnosis to run (default: descriptions)
 - `--output-format {table,json,yaml}`: Output format (default: table)
 - `--verbose / --no-verbose`: Show detailed diagnostic output (default: False)
 - `--timeout INTEGER`: Request timeout in seconds (default: 30)
